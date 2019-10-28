@@ -1,0 +1,11 @@
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: inferator
+subjects:
+- kind: ServiceAccount
+  name: inferator
+roleRef:
+  kind: Role
+  name: inferator
+  apiGroup: rbac.authorization.k8s.io
