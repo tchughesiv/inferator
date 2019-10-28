@@ -1,0 +1,9 @@
+apiVersion: rule.example.com/v1alpha1
+kind: OperationRule
+metadata:
+  name: example-operationrule
+spec:
+  resource:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: test
