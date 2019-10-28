@@ -3,8 +3,14 @@ package operationrule
 import (
 	"context"
 
+	oappsv1 "github.com/openshift/api/apps/v1"
+	buildv1 "github.com/openshift/api/build/v1"
+	oimagev1 "github.com/openshift/api/image/v1"
+	routev1 "github.com/openshift/api/route/v1"
 	rulev1alpha1 "github.com/tchughesiv/inferator/pkg/apis/rule/v1alpha1"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -45,20 +51,39 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		return err
 	}
 
-	// Watch for changes to primary resource OperationRule
-	err = c.Watch(&source.Kind{Type: &rulev1alpha1.OperationRule{}}, &handler.EnqueueRequestForObject{})
-	if err != nil {
-		return err
+	watchObjects := []runtime.Object{
+		&rulev1alpha1.OperationRule{},
+	}
+	objectHandler := &handler.EnqueueRequestForObject{}
+	for _, watchObject := range watchObjects {
+		err = c.Watch(&source.Kind{Type: watchObject}, objectHandler)
+		if err != nil {
+			return err
+		}
 	}
 
-	// TODO(user): Modify this to be the types you create that are owned by the primary resource
-	// Watch for changes to secondary resource Pods and requeue the owner OperationRule
-	err = c.Watch(&source.Kind{Type: &corev1.Pod{}}, &handler.EnqueueRequestForOwner{
+	watchOwnedObjects := []runtime.Object{
+		&oappsv1.DeploymentConfig{},
+		&appsv1.StatefulSet{},
+		&corev1.PersistentVolumeClaim{},
+		&rbacv1.RoleBinding{},
+		&rbacv1.Role{},
+		&corev1.ServiceAccount{},
+		&corev1.Secret{},
+		&corev1.Service{},
+		&routev1.Route{},
+		&buildv1.BuildConfig{},
+		&oimagev1.ImageStream{},
+	}
+	ownerHandler := &handler.EnqueueRequestForOwner{
 		IsController: true,
 		OwnerType:    &rulev1alpha1.OperationRule{},
-	})
-	if err != nil {
-		return err
+	}
+	for _, watchObject := range watchOwnedObjects {
+		err = c.Watch(&source.Kind{Type: watchObject}, ownerHandler)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
