@@ -1,0 +1,7 @@
+apiVersion: rule.example.com/v1alpha1
+kind: OperationRule
+metadata:
+  name: example-operationrule
+spec:
+  # Add fields here
+  size: 3
