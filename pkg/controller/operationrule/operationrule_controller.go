@@ -3,29 +3,25 @@ package operationrule
 import (
 	"context"
 
-	oappsv1 "github.com/openshift/api/apps/v1"
-	buildv1 "github.com/openshift/api/build/v1"
-	oimagev1 "github.com/openshift/api/image/v1"
-	routev1 "github.com/openshift/api/route/v1"
 	rulev1alpha1 "github.com/tchughesiv/inferator/pkg/apis/rule/v1alpha1"
+	"github.com/tchughesiv/inferator/pkg/controller/operationrule/logs"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/discovery"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
-var log = logf.Log.WithName("controller_operationrule")
+var log = logs.GetLogger("controller_operationrule")
 
 /**
 * USER ACTION REQUIRED: This is a scaffold file intended for the user to modify with their own Controller
@@ -40,7 +36,12 @@ func Add(mgr manager.Manager) error {
 
 // newReconciler returns a new reconcile.Reconciler
 func newReconciler(mgr manager.Manager) reconcile.Reconciler {
-	return &ReconcileOperationRule{client: mgr.GetClient(), scheme: mgr.GetScheme()}
+	discoveryclient, err := discovery.NewDiscoveryClientForConfig(mgr.GetConfig())
+	if err != nil {
+		log.Error(err, "Error getting image client.")
+		return &ReconcileOperationRule{}
+	}
+	return &ReconcileOperationRule{client: mgr.GetClient(), discoveryclient: discoveryclient, scheme: mgr.GetScheme()}
 }
 
 // add adds a new Controller to mgr with r as the reconcile.Reconciler
@@ -63,17 +64,7 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	}
 
 	watchOwnedObjects := []runtime.Object{
-		&oappsv1.DeploymentConfig{},
-		&appsv1.StatefulSet{},
-		&corev1.PersistentVolumeClaim{},
-		&rbacv1.RoleBinding{},
-		&rbacv1.Role{},
-		&corev1.ServiceAccount{},
-		&corev1.Secret{},
-		&corev1.Service{},
-		&routev1.Route{},
-		&buildv1.BuildConfig{},
-		&oimagev1.ImageStream{},
+		&appsv1.Deployment{},
 	}
 	ownerHandler := &handler.EnqueueRequestForOwner{
 		IsController: true,
@@ -96,8 +87,9 @@ var _ reconcile.Reconciler = &ReconcileOperationRule{}
 type ReconcileOperationRule struct {
 	// This client, initialized using mgr.Client() above, is a split client
 	// that reads objects from the cache and writes to the apiserver
-	client client.Client
-	scheme *runtime.Scheme
+	client          client.Client
+	discoveryclient *discovery.DiscoveryClient
+	scheme          *runtime.Scheme
 }
 
 // Reconcile reads that state of the cluster for a OperationRule object and makes changes based on the state read
@@ -108,8 +100,8 @@ type ReconcileOperationRule struct {
 // The Controller will requeue the Request to be processed again if the returned error is non-nil or
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
 func (r *ReconcileOperationRule) Reconcile(request reconcile.Request) (reconcile.Result, error) {
-	reqLogger := log.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
-	reqLogger.Info("Reconciling OperationRule")
+	log := log.With("OperationRule", request.Name, "Namespace", request.Namespace)
+	log.Info("Reconciling")
 
 	// Fetch the OperationRule instance
 	instance := &rulev1alpha1.OperationRule{}
@@ -125,8 +117,33 @@ func (r *ReconcileOperationRule) Reconcile(request reconcile.Request) (reconcile
 		return reconcile.Result{}, err
 	}
 
+	apiResourceList, err := r.discoveryclient.ServerResourcesForGroupVersion(instance.Spec.Resource.GroupVersionKind().GroupVersion().String())
+	if err != nil {
+		if errors.IsNotFound(err) {
+			log.Error("GroupVersion ", instance.Spec.Resource.GroupVersionKind().GroupVersion(), " does not exist in the cluster.")
+		}
+		return reconcile.Result{}, nil
+	}
+	exists := false
+	for _, resource := range apiResourceList.APIResources {
+		if resource.Kind == instance.Spec.Resource.Kind {
+			exists = true
+			log.Info(resource.String())
+			break
+		}
+	}
+	if !exists {
+		log.Error("Kind ", instance.Spec.Resource.Kind, " does not exist for ", instance.Spec.Resource.GroupVersionKind().GroupVersion(), " in the cluster.")
+		return reconcile.Result{}, nil
+	}
+
+	namespace := instance.Namespace
+	if instance.Spec.Resource.Namespace != "" {
+		namespace = instance.Spec.Resource.Namespace
+	}
+
 	// Define a new Pod object
-	pod := newPodForCR(instance)
+	pod := newPodForCR(instance, namespace)
 
 	// Set OperationRule instance as the owner and controller
 	if err := controllerutil.SetControllerReference(instance, pod, r.scheme); err != nil {
@@ -135,9 +152,9 @@ func (r *ReconcileOperationRule) Reconcile(request reconcile.Request) (reconcile
 
 	// Check if this Pod already exists
 	found := &corev1.Pod{}
-	err = r.client.Get(context.TODO(), types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, found)
+	err = r.client.Get(context.TODO(), types.NamespacedName{Name: pod.Name, Namespace: namespace}, found)
 	if err != nil && errors.IsNotFound(err) {
-		reqLogger.Info("Creating a new Pod", "Pod.Namespace", pod.Namespace, "Pod.Name", pod.Name)
+		log.Info("Creating a new Pod in ", "Namespace ", namespace, " Pod.Name ", pod.Name)
 		err = r.client.Create(context.TODO(), pod)
 		if err != nil {
 			return reconcile.Result{}, err
@@ -150,19 +167,19 @@ func (r *ReconcileOperationRule) Reconcile(request reconcile.Request) (reconcile
 	}
 
 	// Pod already exists - don't requeue
-	reqLogger.Info("Skip reconcile: Pod already exists", "Pod.Namespace", found.Namespace, "Pod.Name", found.Name)
+	log.Info("Skip reconcile: Pod already exists in ", "Namespace ", found.Namespace, " Pod.Name ", found.Name)
 	return reconcile.Result{}, nil
 }
 
 // newPodForCR returns a busybox pod with the same name/namespace as the cr
-func newPodForCR(cr *rulev1alpha1.OperationRule) *corev1.Pod {
+func newPodForCR(cr *rulev1alpha1.OperationRule, namespace string) *corev1.Pod {
 	labels := map[string]string{
 		"app": cr.Name,
 	}
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cr.Name + "-pod",
-			Namespace: cr.Namespace,
+			Namespace: namespace,
 			Labels:    labels,
 		},
 		Spec: corev1.PodSpec{

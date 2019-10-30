@@ -10,9 +10,16 @@ import (
 // OperationRuleSpec defines the desired state of OperationRule
 // +k8s:openapi-gen=true
 type OperationRuleSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "operator-sdk generate k8s" to regenerate code after modifying this file
 	// Add custom validation using kubebuilder tags: https://book-v1.book.kubebuilder.io/beyond_basics/generating_crd.html
+	Resource OperationRuleSpecType `json:"resource,omitempty"`
+}
+
+// OperationRuleSpecType defines the desired state of OperationRule
+// +k8s:openapi-gen=true
+type OperationRuleSpecType struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
 }
 
 // OperationRuleStatus defines the observed state of OperationRule
