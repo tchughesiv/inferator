@@ -9,6 +9,9 @@ spec:
     listKind: OperationRuleList
     plural: operationrules
     singular: operationrule
+    shortNames:
+    - oprule
+    - opsrule
   scope: Namespaced
   subresources:
     status: {}

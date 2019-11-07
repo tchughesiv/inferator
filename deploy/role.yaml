@@ -16,7 +16,14 @@ rules:
   - configmaps
   - secrets
   verbs:
-  - '*'
+  - create
+  - delete
+  - deletecollection
+  - get
+  - list
+  - patch
+  - update
+  - watch
 - apiGroups:
   - apps
   resources:
@@ -25,7 +32,14 @@ rules:
   - replicasets
   - statefulsets
   verbs:
-  - '*'
+  - create
+  - delete
+  - deletecollection
+  - get
+  - list
+  - patch
+  - update
+  - watch
 - apiGroups:
   - monitoring.coreos.com
   resources:
@@ -42,20 +56,16 @@ rules:
   verbs:
   - update
 - apiGroups:
-  - ""
-  resources:
-  - pods
-  verbs:
-  - get
-- apiGroups:
-  - apps
-  resources:
-  - replicasets
-  verbs:
-  - get
-- apiGroups:
   - rule.example.com
   resources:
-  - '*'
+  - operationrules
+  - operationrules/finalizers
   verbs:
-  - '*'
+  - create
+  - delete
+  - deletecollection
+  - get
+  - list
+  - patch
+  - update
+  - watch
