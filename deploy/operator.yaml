@@ -15,7 +15,6 @@ spec:
       serviceAccountName: inferator
       containers:
         - name: inferator
-          # Replace this with the built image name
           image: quay.io/tchughesiv/inferator
           command:
           - inferator
@@ -30,4 +29,6 @@ spec:
                 fieldRef:
                   fieldPath: metadata.name
             - name: OPERATOR_NAME
-              value: "inferator"
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['name']

@@ -1,7 +1,12 @@
 package v1alpha1
 
 import (
+	"context"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	runtime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/discovery"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
@@ -51,6 +56,19 @@ type OperationRuleList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []OperationRule `json:"items"`
+}
+
+// PlatformService ...
+type PlatformService interface {
+	Create(ctx context.Context, obj runtime.Object) error
+	Delete(ctx context.Context, obj runtime.Object, opts ...client.DeleteOption) error
+	Get(ctx context.Context, key client.ObjectKey, obj runtime.Object) error
+	List(ctx context.Context, list runtime.Object, opts client.ListOption) error
+	Update(ctx context.Context, obj runtime.Object) error
+	GetCached(ctx context.Context, key client.ObjectKey, obj runtime.Object) error
+	GetDiscoveryClient() *discovery.DiscoveryClient
+	GetScheme() *runtime.Scheme
+	IsMockService() bool
 }
 
 func init() {
