@@ -21,4 +21,11 @@ rules:
   - operationrules
   - operationrules/finalizers
   verbs:
-  - '*'
+  - create
+  - delete
+  - deletecollection
+  - get
+  - list
+  - patch
+  - update
+  - watch
