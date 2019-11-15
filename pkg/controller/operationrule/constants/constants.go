@@ -2,6 +2,8 @@ package constants
 
 import corev1 "k8s.io/api/core/v1"
 
+var RuntimeEnv = "INFERATOR"
+
 // DebugTrue - used to enable debug logs in objects
 var DebugTrue = corev1.EnvVar{
 	Name:  "DEBUG",
