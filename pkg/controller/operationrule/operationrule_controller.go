@@ -2,6 +2,7 @@ package operationrule
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -16,7 +17,9 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apiserver/pkg/admission"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -45,38 +48,58 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	if err != nil {
 		return err
 	}
-
-	watchObjects := []runtime.Object{
-		&rulev1alpha1.OperationRule{},
-	}
-	objectHandler := &handler.EnqueueRequestForObject{}
-	for _, watchObject := range watchObjects {
-		err = c.Watch(&source.Kind{Type: watchObject}, objectHandler)
-		if err != nil {
-			return err
-		}
-	}
-
-	watchOwnedObjects := []runtime.Object{
-		&corev1.Pod{},
-		&corev1.ServiceAccount{},
-		&rbacv1.Role{},
-		&rbacv1.RoleBinding{},
-	}
 	if os.Getenv(constants.RuntimeEnv) == "true" {
-		watchOwnedObjects = []runtime.Object{
-			&corev1.Pod{},
+		gvk := schema.GroupVersionKind{Group: os.Getenv("OPRULE_OBJECT_GROUP"), Version: os.Getenv("OPRULE_OBJECT_VERSION"), Kind: os.Getenv("OPRULE_OBJECT_KIND")}
+		objInt := admission.NewObjectInterfacesFromScheme(mgr.GetScheme())
+		typer := objInt.GetObjectTyper()
+		if typer.Recognizes(gvk) {
+			creator := objInt.GetObjectCreater()
+			newObject, err := creator.New(gvk)
+			if err != nil {
+				return err
+			}
+			log.Info(newObject.GetObjectKind().GroupVersionKind().String())
+			if err != nil {
+				return err
+			}
+			watchObjects := []runtime.Object{
+				newObject,
+			}
+			objectHandler := &handler.EnqueueRequestForObject{}
+			for _, watchObject := range watchObjects {
+				err = c.Watch(&source.Kind{Type: watchObject}, objectHandler)
+				if err != nil {
+					return err
+				}
+			}
 		}
-	}
+	} else {
+		watchObjects := []runtime.Object{
+			&rulev1alpha1.OperationRule{},
+		}
+		objectHandler := &handler.EnqueueRequestForObject{}
+		for _, watchObject := range watchObjects {
+			err = c.Watch(&source.Kind{Type: watchObject}, objectHandler)
+			if err != nil {
+				return err
+			}
+		}
+		watchOwnedObjects := []runtime.Object{
+			&corev1.Pod{},
+			&corev1.ServiceAccount{},
+			&rbacv1.Role{},
+			&rbacv1.RoleBinding{},
+		}
 
-	ownerHandler := &handler.EnqueueRequestForOwner{
-		IsController: true,
-		OwnerType:    &rulev1alpha1.OperationRule{},
-	}
-	for _, watchObject := range watchOwnedObjects {
-		err = c.Watch(&source.Kind{Type: watchObject}, ownerHandler)
-		if err != nil {
-			return err
+		ownerHandler := &handler.EnqueueRequestForOwner{
+			IsController: true,
+			OwnerType:    &rulev1alpha1.OperationRule{},
+		}
+		for _, watchObject := range watchOwnedObjects {
+			err = c.Watch(&source.Kind{Type: watchObject}, ownerHandler)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
@@ -106,14 +129,34 @@ func (r *Reconciler) Reconcile(request reconcile.Request) (reconcile.Result, err
 }
 
 func (r *Reconciler) ReconcileInferator(request reconcile.Request) (reconcile.Result, error) {
-	log := log.With("Inferator", request.Name, "Namespace", request.Namespace)
-	log.Info(constants.RuntimeEnv + " = " + os.Getenv(constants.RuntimeEnv))
-	log.Info("OPRULE_SCHEMA_NAME = " + os.Getenv("OPRULE_SCHEMA_NAME"))
-	log.Info("OPRULE_OBJECT_NAME = " + os.Getenv("OPRULE_OBJECT_NAME"))
-	log.Info("OPRULE_OBJECT_KIND = " + os.Getenv("OPRULE_OBJECT_KIND"))
-	log.Info("OPRULE_OBJECT_GROUP = " + os.Getenv("OPRULE_OBJECT_GROUP"))
-	log.Info("OPRULE_OBJECT_VERSION = " + os.Getenv("OPRULE_OBJECT_VERSION"))
-	log.Info("OPRULE_OBJECT_GROUP_VERSION = " + os.Getenv("OPRULE_OBJECT_GROUP_VERSION"))
+	if request.Name == os.Getenv("OPRULE_OBJECT_NAME") {
+		log := log.With("Inferator", request.Name, "Namespace", request.Namespace)
+		log.Info("OPRULE_OBJECT_NAME = " + os.Getenv("OPRULE_OBJECT_NAME"))
+		log.Info("OPRULE_OBJECT_KIND = " + os.Getenv("OPRULE_OBJECT_KIND"))
+		log.Info("OPRULE_OBJECT_GROUP_VERSION = " + os.Getenv("OPRULE_OBJECT_GROUP_VERSION"))
+		log.Info("OPRULE_SCHEMA_NAME = " + os.Getenv("OPRULE_SCHEMA_NAME"))
+
+		gvk := schema.GroupVersionKind{Group: os.Getenv("OPRULE_OBJECT_GROUP"), Version: os.Getenv("OPRULE_OBJECT_VERSION"), Kind: os.Getenv("OPRULE_OBJECT_KIND")}
+		objInt := admission.NewObjectInterfacesFromScheme(r.Service.GetScheme())
+		typer := objInt.GetObjectTyper()
+		if typer.Recognizes(gvk) {
+			creator := objInt.GetObjectCreater()
+			object, err := creator.New(gvk)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+
+			err = r.Service.Get(context.TODO(), types.NamespacedName{Name: request.Name, Namespace: request.Namespace}, object)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+			prettyJSON, err := json.MarshalIndent(object, "", "    ")
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+			fmt.Printf("%s\n", string(prettyJSON))
+		}
+	}
 
 	time.Sleep(60 * time.Second)
 	return reconcile.Result{}, nil
@@ -228,7 +271,6 @@ func (r *Reconciler) ReconcileOperator(request reconcile.Request) (reconcile.Res
 	for _, x := range d.Definitions.AdditionalProperties {
 		if strings.HasSuffix(x.Name, schemaName) {
 			schemaName = x.Name
-			fmt.Println(x.Value)
 		}
 	}
 
