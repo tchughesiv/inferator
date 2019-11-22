@@ -2,11 +2,17 @@ package operationrule
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"strings"
+	"time"
 
+	"github.com/tchughesiv/inferator/pkg/apis/rule/v1alpha1"
 	rulev1alpha1 "github.com/tchughesiv/inferator/pkg/apis/rule/v1alpha1"
-	rbacv1 "k8s.io/api/rbac/v1"
+	"github.com/tchughesiv/inferator/pkg/controller/operationrule/constants"
 	"github.com/tchughesiv/inferator/pkg/controller/operationrule/logs"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -57,6 +63,12 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		&rbacv1.Role{},
 		&rbacv1.RoleBinding{},
 	}
+	if os.Getenv(constants.RuntimeEnv) == "true" {
+		watchOwnedObjects = []runtime.Object{
+			&corev1.Pod{},
+		}
+	}
+
 	ownerHandler := &handler.EnqueueRequestForOwner{
 		IsController: true,
 		OwnerType:    &rulev1alpha1.OperationRule{},
@@ -87,8 +99,28 @@ type Reconciler struct {
 // The Controller will requeue the Request to be processed again if the returned error is non-nil or
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
 func (r *Reconciler) Reconcile(request reconcile.Request) (reconcile.Result, error) {
+	if os.Getenv(constants.RuntimeEnv) == "true" {
+		return r.ReconcileInferator(request)
+	}
+	return r.ReconcileOperator(request)
+}
+
+func (r *Reconciler) ReconcileInferator(request reconcile.Request) (reconcile.Result, error) {
+	log := log.With("Inferator", request.Name, "Namespace", request.Namespace)
+	log.Info(constants.RuntimeEnv + " = " + os.Getenv(constants.RuntimeEnv))
+	log.Info("OPRULE_SCHEMA_NAME = " + os.Getenv("OPRULE_SCHEMA_NAME"))
+	log.Info("OPRULE_OBJECT_NAME = " + os.Getenv("OPRULE_OBJECT_NAME"))
+	log.Info("OPRULE_OBJECT_KIND = " + os.Getenv("OPRULE_OBJECT_KIND"))
+	log.Info("OPRULE_OBJECT_GROUP = " + os.Getenv("OPRULE_OBJECT_GROUP"))
+	log.Info("OPRULE_OBJECT_VERSION = " + os.Getenv("OPRULE_OBJECT_VERSION"))
+	log.Info("OPRULE_OBJECT_GROUP_VERSION = " + os.Getenv("OPRULE_OBJECT_GROUP_VERSION"))
+
+	time.Sleep(60 * time.Second)
+	return reconcile.Result{}, nil
+}
+
+func (r *Reconciler) ReconcileOperator(request reconcile.Request) (reconcile.Result, error) {
 	log := log.With("OperationRule", request.Name, "Namespace", request.Namespace)
-	log.Info("Reconciling")
 
 	// Fetch the OperationRule instance
 	instance := &rulev1alpha1.OperationRule{}
@@ -146,9 +178,6 @@ func (r *Reconciler) Reconcile(request reconcile.Request) (reconcile.Result, err
 		if err != nil {
 			return reconcile.Result{}, err
 		}
-
-		// Role created successfully - don't requeue
-		return reconcile.Result{}, nil
 	} else if err != nil {
 		return reconcile.Result{}, err
 	}
@@ -168,9 +197,6 @@ func (r *Reconciler) Reconcile(request reconcile.Request) (reconcile.Result, err
 		if err != nil {
 			return reconcile.Result{}, err
 		}
-
-		// ServiceAccount created successfully - don't requeue
-		return reconcile.Result{}, nil
 	} else if err != nil {
 		return reconcile.Result{}, err
 	}
@@ -190,15 +216,26 @@ func (r *Reconciler) Reconcile(request reconcile.Request) (reconcile.Result, err
 		if err != nil {
 			return reconcile.Result{}, err
 		}
-
-		// RoleBinding created successfully - don't requeue
-		return reconcile.Result{}, nil
 	} else if err != nil {
 		return reconcile.Result{}, err
 	}
 
+	schemaName := instance.Spec.Resource.GroupVersionKind().Group + "." +
+		instance.Spec.Resource.GroupVersionKind().Version + "." +
+		instance.Spec.Resource.Kind
+
+	d, _ := r.Service.GetDiscoveryClient().OpenAPISchema()
+	for _, x := range d.Definitions.AdditionalProperties {
+		if strings.HasSuffix(x.Name, schemaName) {
+			schemaName = x.Name
+			fmt.Println(x.Value)
+		}
+	}
+
+	fmt.Println("NamedSchema: " + schemaName)
+
 	// Define a new Pod object
-	pod := newPodForCR(instance, serviceAccount.Name, namespace)
+	pod := newPodForCR(instance, serviceAccount.Name, schemaName, namespace)
 	// Set OperationRule instance as the owner and controller
 	if err := controllerutil.SetControllerReference(instance, pod, r.Service.GetScheme()); err != nil {
 		return reconcile.Result{}, err
@@ -212,26 +249,22 @@ func (r *Reconciler) Reconcile(request reconcile.Request) (reconcile.Result, err
 		if err != nil {
 			return reconcile.Result{}, err
 		}
-
-		// Pod created successfully - don't requeue
-		return reconcile.Result{}, nil
 	} else if err != nil {
 		return reconcile.Result{}, err
 	}
-
-	//schemaDoc, _ := r.Service.GetDiscoveryClient()
 
 	return reconcile.Result{}, nil
 }
 
 // newPodForCR returns a busybox pod with the same name/namespace as the cr
-func newPodForCR(cr *rulev1alpha1.OperationRule, serviceAccount, namespace string) *corev1.Pod {
+func newPodForCR(cr *rulev1alpha1.OperationRule, serviceAccount, schemaName, namespace string) *corev1.Pod {
 	labels := map[string]string{
 		"app": cr.Name,
 	}
+	name := cr.Name + "-inferator"
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      cr.Name,
+			Name:      name,
 			Namespace: namespace,
 			Labels:    labels,
 		},
@@ -239,9 +272,21 @@ func newPodForCR(cr *rulev1alpha1.OperationRule, serviceAccount, namespace strin
 			ServiceAccountName: serviceAccount,
 			Containers: []corev1.Container{
 				{
-					Name:    "busybox",
-					Image:   "busybox",
-					Command: []string{"sleep", "3600"},
+					Name:    name,
+					Image:   "quay.io/tchughesiv/inferator",
+					Command: []string{"inferator"},
+					Env: []corev1.EnvVar{
+						{Name: constants.RuntimeEnv, Value: "true"},
+						{Name: "OPRULE_SCHEMA_NAME", Value: schemaName},
+						{Name: "OPRULE_OBJECT_NAME", Value: cr.Spec.Resource.Name},
+						{Name: "OPRULE_OBJECT_KIND", Value: cr.Spec.Resource.Kind},
+						{Name: "OPRULE_OBJECT_GROUP", Value: cr.Spec.Resource.GroupVersionKind().Group},
+						{Name: "OPRULE_OBJECT_VERSION", Value: cr.Spec.Resource.GroupVersionKind().Version},
+						{Name: "OPRULE_OBJECT_GROUP_VERSION", Value: cr.Spec.Resource.GroupVersionKind().GroupVersion().String()},
+						{Name: "WATCH_NAMESPACE", Value: namespace},
+						{Name: "POD_NAME", Value: name},
+						{Name: "OPERATOR_NAME", Value: name},
+					},
 				},
 			},
 		},
@@ -263,6 +308,16 @@ func newRoleforCR(cr *rulev1alpha1.OperationRule, apiResource metav1.APIResource
 			{
 				APIGroups: []string{cr.Spec.Resource.GroupVersionKind().Group},
 				Resources: []string{apiResource.Name},
+				Verbs:     apiResource.Verbs,
+			},
+			{
+				APIGroups: []string{"", "rbac.authorization.k8s.io", v1alpha1.SchemeGroupVersion.Group},
+				Resources: []string{"*"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{""},
+				Resources: []string{"configmaps", "services", "pods", "pods/finalizers"},
 				Verbs:     apiResource.Verbs,
 			},
 		},

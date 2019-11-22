@@ -18,13 +18,13 @@ import (
 	"github.com/spf13/pflag"
 	"github.com/tchughesiv/inferator/pkg/apis"
 	"github.com/tchughesiv/inferator/pkg/controller"
+	"github.com/tchughesiv/inferator/pkg/controller/operationrule/constants"
 	"github.com/tchughesiv/inferator/pkg/controller/operationrule/logs"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
 )
@@ -55,16 +55,6 @@ func main() {
 
 	pflag.Parse()
 
-	// Use a zap logr.Logger implementation. If none of the zap
-	// flags are configured (or if the zap flag set is not being
-	// used), this defaults to a production zap logger.
-	//
-	// The logger instantiated here can be changed to any logger
-	// implementing the logr.Logger interface. This logger will
-	// be propagated through the whole operator, generating
-	// uniform and structured logs.
-	logf.SetLogger(zap.Logger())
-
 	printVersion()
 
 	namespace, err := k8sutil.GetWatchNamespace()
@@ -82,7 +72,11 @@ func main() {
 
 	ctx := context.TODO()
 	// Become the leader before proceeding
-	err = leader.Become(ctx, "inferator-lock")
+	if os.Getenv(constants.RuntimeEnv) == "true" {
+		err = leader.Become(ctx, os.Getenv("POD_NAME")+"-lock")
+	} else {
+		err = leader.Become(ctx, "inferator-lock")
+	}
 	if err != nil {
 		log.Error(err, "")
 		os.Exit(1)
