@@ -13,19 +13,16 @@ import (
 
 func init() {
 	// Register the types with the Scheme so the components can map objects to GroupVersionKinds and back
+	AddToSchemes = append(AddToSchemes,
+		v1alpha1.SchemeBuilder.AddToScheme,
+		corev1.SchemeBuilder.AddToScheme,
+		rbacv1.SchemeBuilder.AddToScheme,
+	)
 	if os.Getenv(constants.RuntimeEnv) == "true" {
 		schemeGroupVersion := schema.GroupVersion{Group: os.Getenv("OPRULE_OBJECT_GROUP"), Version: os.Getenv("OPRULE_OBJECT_VERSION")}
 		schemeBuilder := &scheme.Builder{GroupVersion: schemeGroupVersion}
 		AddToSchemes = append(AddToSchemes,
-			v1alpha1.SchemeBuilder.AddToScheme,
-			corev1.SchemeBuilder.AddToScheme,
 			schemeBuilder.AddToScheme,
-		)
-	} else {
-		AddToSchemes = append(AddToSchemes,
-			v1alpha1.SchemeBuilder.AddToScheme,
-			corev1.SchemeBuilder.AddToScheme,
-			rbacv1.SchemeBuilder.AddToScheme,
 		)
 	}
 }

@@ -24,7 +24,7 @@ type OperationRuleSpec struct {
 // +k8s:openapi-gen=true
 type OperationRuleSpecType struct {
 	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
+	metav1.ObjectMeta `json:",inline,omitempty"`
 }
 
 // OperationRuleStatus defines the observed state of OperationRule
