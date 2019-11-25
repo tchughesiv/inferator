@@ -51,26 +51,25 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	if os.Getenv(constants.RuntimeEnv) == "true" {
 		gvk := schema.GroupVersionKind{Group: os.Getenv("OPRULE_OBJECT_GROUP"), Version: os.Getenv("OPRULE_OBJECT_VERSION"), Kind: os.Getenv("OPRULE_OBJECT_KIND")}
 		objInt := admission.NewObjectInterfacesFromScheme(mgr.GetScheme())
-		typer := objInt.GetObjectTyper()
-		if typer.Recognizes(gvk) {
-			creator := objInt.GetObjectCreater()
-			newObject, err := creator.New(gvk)
+		// typer := objInt.GetObjectTyper()
+		// if typer.Recognizes(gvk) {
+		creator := objInt.GetObjectCreater()
+		newObject, err := creator.New(gvk)
+		if err != nil {
+			return err
+		}
+		log.Info(newObject.GetObjectKind().GroupVersionKind().String())
+		if err != nil {
+			return err
+		}
+		watchObjects := []runtime.Object{
+			newObject,
+		}
+		objectHandler := &handler.EnqueueRequestForObject{}
+		for _, watchObject := range watchObjects {
+			err = c.Watch(&source.Kind{Type: watchObject}, objectHandler)
 			if err != nil {
 				return err
-			}
-			log.Info(newObject.GetObjectKind().GroupVersionKind().String())
-			if err != nil {
-				return err
-			}
-			watchObjects := []runtime.Object{
-				newObject,
-			}
-			objectHandler := &handler.EnqueueRequestForObject{}
-			for _, watchObject := range watchObjects {
-				err = c.Watch(&source.Kind{Type: watchObject}, objectHandler)
-				if err != nil {
-					return err
-				}
 			}
 		}
 	} else {
@@ -138,24 +137,23 @@ func (r *Reconciler) ReconcileInferator(request reconcile.Request) (reconcile.Re
 
 		gvk := schema.GroupVersionKind{Group: os.Getenv("OPRULE_OBJECT_GROUP"), Version: os.Getenv("OPRULE_OBJECT_VERSION"), Kind: os.Getenv("OPRULE_OBJECT_KIND")}
 		objInt := admission.NewObjectInterfacesFromScheme(r.Service.GetScheme())
-		typer := objInt.GetObjectTyper()
-		if typer.Recognizes(gvk) {
-			creator := objInt.GetObjectCreater()
-			object, err := creator.New(gvk)
-			if err != nil {
-				return reconcile.Result{}, err
-			}
-
-			err = r.Service.Get(context.TODO(), types.NamespacedName{Name: request.Name, Namespace: request.Namespace}, object)
-			if err != nil {
-				return reconcile.Result{}, err
-			}
-			prettyJSON, err := json.MarshalIndent(object, "", "    ")
-			if err != nil {
-				return reconcile.Result{}, err
-			}
-			fmt.Printf("%s\n", string(prettyJSON))
+		// typer := objInt.GetObjectTyper()
+		// if typer.Recognizes(gvk) {
+		creator := objInt.GetObjectCreater()
+		object, err := creator.New(gvk)
+		if err != nil {
+			return reconcile.Result{}, err
 		}
+
+		err = r.Service.Get(context.TODO(), types.NamespacedName{Name: request.Name, Namespace: request.Namespace}, object)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+		prettyJSON, err := json.MarshalIndent(object, "", "    ")
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+		fmt.Printf("%s\n", string(prettyJSON))
 	}
 
 	time.Sleep(60 * time.Second)
