@@ -3,6 +3,7 @@ package apis
 import (
 	"os"
 
+	knative "github.com/knative/serving/pkg/apis/serving/v1"
 	oappsv1 "github.com/openshift/api/apps/v1"
 	buildv1 "github.com/openshift/api/build/v1"
 	oimagev1 "github.com/openshift/api/image/v1"
@@ -23,6 +24,7 @@ func init() {
 		corev1.SchemeBuilder.AddToScheme,
 		appsv1.SchemeBuilder.AddToScheme,
 		rbacv1.SchemeBuilder.AddToScheme,
+		knative.SchemeBuilder.AddToScheme,
 		oappsv1.AddToScheme,
 		routev1.AddToScheme,
 		oimagev1.AddToScheme,

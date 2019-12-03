@@ -3,17 +3,24 @@ module github.com/tchughesiv/inferator
 go 1.13
 
 require (
+	contrib.go.opencensus.io/exporter/prometheus v0.1.0 // indirect
+	contrib.go.opencensus.io/exporter/stackdriver v0.12.9-0.20191203174353-1cdca918b59d // indirect
 	github.com/go-logr/logr v0.1.0
 	github.com/go-openapi/spec v0.19.0
+	github.com/google/go-containerregistry v0.0.0-20191202175804-2ce3ea99b462 // indirect
+	github.com/knative/serving v0.10.0
 	github.com/openshift/api v3.9.1-0.20190424152011-77b8897ec79a+incompatible
 	github.com/operator-framework/operator-sdk v0.12.0
 	github.com/spf13/pflag v1.0.3
+	go.opencensus.io v0.22.2 // indirect
 	go.uber.org/zap v1.10.0
 	k8s.io/api v0.0.0
 	k8s.io/apimachinery v0.0.0
 	k8s.io/apiserver v0.0.0
 	k8s.io/client-go v11.0.0+incompatible
 	k8s.io/kube-openapi v0.0.0-20190918143330-0270cf2f1c1d
+	knative.dev/pkg v0.0.0-20191204004536-da3d090aa9ee // indirect
+	knative.dev/serving v0.10.0 // indirect
 	sigs.k8s.io/controller-runtime v0.3.0
 )
 
