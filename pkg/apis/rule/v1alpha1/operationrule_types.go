@@ -17,7 +17,20 @@ import (
 type OperationRuleSpec struct {
 	// Important: Run "operator-sdk generate k8s" to regenerate code after modifying this file
 	// Add custom validation using kubebuilder tags: https://book-v1.book.kubebuilder.io/beyond_basics/generating_crd.html
-	Resource OperationRuleSpecType `json:"resource,omitempty"`
+	Resources map[string]OperationRuleSpecType `json:"resources"`
+	Inference OperationRuleSpecInference       `json:"inference"`
+}
+
+// OperationRuleSpecInference defines the desired state of OperationRule
+// +k8s:openapi-gen=true
+type OperationRuleSpecInference struct {
+	Name     string     `json:"name,omitempty"`
+	Input    []Variable `json:"input"`
+	Rules    []Rules    `json:"rules"`
+	Output   OutputType `json:"output"`
+	Expose   bool       `json:"expose,omitempty"`
+	HostName string     `json:"hostname,omitempty"`
+	KNative  bool       `json:"knative,omitempty"`
 }
 
 // OperationRuleSpecType defines the desired state of OperationRule
@@ -27,12 +40,37 @@ type OperationRuleSpecType struct {
 	metav1.ObjectMeta `json:",inline,omitempty"`
 }
 
+// +k8s:openapi-gen=true
+type Variable struct {
+	Name  string `json:"name,omitempty"`
+	Path  string `json:"path,omitempty"`
+	Type  string `json:"type,omitempty"`
+	Value string `json:"value,omitempty"`
+}
+
+// +k8s:openapi-gen=true
+type Rules struct {
+	When string `json:"when"`
+	Then Action `json:"then"`
+}
+
+// +k8s:openapi-gen=true
+type Action struct {
+	Output []Variable `json:"output"`
+}
+
+// +k8s:openapi-gen=true
+type OutputType struct {
+	Type string `json:"type"`
+}
+
 // OperationRuleStatus defines the observed state of OperationRule
 // +k8s:openapi-gen=true
 type OperationRuleStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "operator-sdk generate k8s" to regenerate code after modifying this file
 	// Add custom validation using kubebuilder tags: https://book-v1.book.kubebuilder.io/beyond_basics/generating_crd.html
+	RouteHost string `json:"routeHost,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
