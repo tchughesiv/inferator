@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"reflect"
-	"strings"
 	"time"
 
 	knative "github.com/knative/serving/pkg/apis/serving/v1"
@@ -20,7 +19,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apiserver/pkg/admission"
@@ -58,22 +56,26 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		return err
 	}
 	if os.Getenv(constants.RuntimeEnv) == "true" {
-		gvk := schema.GroupVersionKind{Group: os.Getenv("OPRULE_OBJECT_GROUP"), Version: os.Getenv("OPRULE_OBJECT_VERSION"), Kind: os.Getenv("OPRULE_OBJECT_KIND")}
-		objInt := admission.NewObjectInterfacesFromScheme(mgr.GetScheme())
-		// typer := objInt.GetObjectTyper()
-		// if typer.Recognizes(gvk) {
-		creator := objInt.GetObjectCreater()
-		newObject, err := creator.New(gvk)
+		objects := []rulev1alpha1.OperationRuleSpecType{}
+		watchObjects := []runtime.Object{}
+		err = json.Unmarshal([]byte(os.Getenv("OPRULE_OBJECTS")), &objects)
 		if err != nil {
 			return err
 		}
-		log.Info(newObject.GetObjectKind().GroupVersionKind().String())
-		if err != nil {
-			return err
+		for _, s := range objects {
+			objInt := admission.NewObjectInterfacesFromScheme(mgr.GetScheme())
+			creator := objInt.GetObjectCreater()
+			newObject, err := creator.New(s.GroupVersionKind())
+			if err != nil {
+				return err
+			}
+			log.Info(newObject.GetObjectKind().GroupVersionKind().String())
+			if err != nil {
+				return err
+			}
+			watchObjects = append(watchObjects, newObject)
 		}
-		watchObjects := []runtime.Object{
-			newObject,
-		}
+
 		objectHandler := &handler.EnqueueRequestForObject{}
 		for _, watchObject := range watchObjects {
 			err = c.Watch(&source.Kind{Type: watchObject}, objectHandler)
@@ -139,32 +141,34 @@ func (r *Reconciler) Reconcile(request reconcile.Request) (reconcile.Result, err
 }
 
 func (r *Reconciler) ReconcileInferator(request reconcile.Request) (reconcile.Result, error) {
-	if request.Name == os.Getenv("OPRULE_OBJECT_NAME") {
-		log := log.With("Inferator", request.Name, "Namespace", request.Namespace)
-		log.Info("OPRULE_OBJECT_NAME = " + os.Getenv("OPRULE_OBJECT_NAME"))
-		log.Info("OPRULE_OBJECT_KIND = " + os.Getenv("OPRULE_OBJECT_KIND"))
-		log.Info("OPRULE_OBJECT_GROUP_VERSION = " + os.Getenv("OPRULE_OBJECT_GROUP_VERSION"))
-		log.Info("OPRULE_SCHEMA_NAME = " + os.Getenv("OPRULE_SCHEMA_NAME"))
+	log := log.With("Inferator", request.Name, "Namespace", request.Namespace)
 
-		gvk := schema.GroupVersionKind{Group: os.Getenv("OPRULE_OBJECT_GROUP"), Version: os.Getenv("OPRULE_OBJECT_VERSION"), Kind: os.Getenv("OPRULE_OBJECT_KIND")}
-		objInt := admission.NewObjectInterfacesFromScheme(r.Service.GetScheme())
-		// typer := objInt.GetObjectTyper()
-		// if typer.Recognizes(gvk) {
-		creator := objInt.GetObjectCreater()
-		object, err := creator.New(gvk)
-		if err != nil {
-			return reconcile.Result{}, err
+	objects := []rulev1alpha1.OperationRuleSpecType{}
+	err := json.Unmarshal([]byte(os.Getenv("OPRULE_OBJECTS")), &objects)
+	if err != nil {
+		log.Error(err)
+	}
+	for _, obj := range objects {
+		if request.Name == obj.Name {
+			fmt.Println(obj.GroupVersionKind().String())
+			objInt := admission.NewObjectInterfacesFromScheme(r.Service.GetScheme())
+			// typer := objInt.GetObjectTyper()
+			// if typer.Recognizes(gvk) {
+			creator := objInt.GetObjectCreater()
+			object, err := creator.New(obj.GroupVersionKind())
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+			err = r.Service.Get(context.TODO(), types.NamespacedName{Name: request.Name, Namespace: request.Namespace}, object)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+			prettyJSON, err := json.MarshalIndent(object, "", "    ")
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+			fmt.Printf("%s\n", string(prettyJSON))
 		}
-
-		err = r.Service.Get(context.TODO(), types.NamespacedName{Name: request.Name, Namespace: request.Namespace}, object)
-		if err != nil {
-			return reconcile.Result{}, err
-		}
-		prettyJSON, err := json.MarshalIndent(object, "", "    ")
-		if err != nil {
-			return reconcile.Result{}, err
-		}
-		fmt.Printf("%s\n", string(prettyJSON))
 	}
 
 	time.Sleep(60 * time.Second)
@@ -203,7 +207,8 @@ func (r *Reconciler) ReconcileOperator(request reconcile.Request) (reconcile.Res
 		}
 	}
 	namespace := instance.Namespace
-	apiResource := metav1.APIResource{}
+	resources := []rulev1alpha1.OperationRuleSpecType{}
+	apiResources := []metav1.APIResource{}
 	for _, resource := range instance.Spec.Resources {
 		apiResourceList, err := r.Service.GetDiscoveryClient().ServerResourcesForGroupVersion(resource.GroupVersionKind().GroupVersion().String())
 		if err != nil {
@@ -214,10 +219,12 @@ func (r *Reconciler) ReconcileOperator(request reconcile.Request) (reconcile.Res
 		}
 
 		exists := false
-		for _, resource := range apiResourceList.APIResources {
-			if resource.Kind == resource.Kind {
+		for _, apiR := range apiResourceList.APIResources {
+			if resource.Kind == apiR.Kind {
 				exists = true
-				apiResource = resource
+				// append to array for later processing
+				resources = append(resources, resource)
+				apiResources = append(apiResources, apiR)
 				break
 			}
 		}
@@ -230,21 +237,23 @@ func (r *Reconciler) ReconcileOperator(request reconcile.Request) (reconcile.Res
 			namespace = resource.Namespace
 		}
 
-		schemaName := resource.GroupVersionKind().Group + "." +
-			resource.GroupVersionKind().Version + "." +
-			resource.Kind
+		/*
+			schemaName := resource.GroupVersionKind().Group + "." +
+				resource.GroupVersionKind().Version + "." +
+				resource.Kind
 
-		d, _ := r.Service.GetDiscoveryClient().OpenAPISchema()
-		for _, x := range d.Definitions.AdditionalProperties {
-			if strings.HasSuffix(x.Name, schemaName) {
-				schemaName = x.Name
+			d, _ := r.Service.GetDiscoveryClient().OpenAPISchema()
+			for _, x := range d.Definitions.AdditionalProperties {
+				if strings.HasSuffix(x.Name, schemaName) {
+					schemaName = x.Name
+				}
 			}
-		}
 
-		fmt.Println("NamedSchema: " + schemaName)
+			fmt.Println("NamedSchema: " + schemaName)
+		*/
 	}
 	// Define a new Role object
-	role := newRoleforCR(instance, apiResource, namespace)
+	role := newRoleforCR(instance, resources, apiResources, namespace)
 	// Set OperationRule instance as the owner and controller
 	if err := controllerutil.SetControllerReference(instance, role, r.Service.GetScheme()); err != nil {
 		return reconcile.Result{}, err
@@ -365,7 +374,7 @@ func (r *Reconciler) ReconcileOperator(request reconcile.Request) (reconcile.Res
 	}
 
 	// Create pod object based on CR, if does not exist:
-	genPod := newPodForCR(instance, serviceAccount.Name, namespace)
+	genPod := newPodForCR(instance, resources, serviceAccount.Name, namespace)
 	curPod := &corev1.Pod{}
 	err = r.loadOrCreate(instance, genPod, curPod)
 	if err != nil {
@@ -461,13 +470,16 @@ func (r *Reconciler) ReconcileOperator(request reconcile.Request) (reconcile.Res
 }
 
 // newPodForCR returns a busybox pod with the same name/namespace as the cr
-func newPodForCR(cr *rulev1alpha1.OperationRule, serviceAccount, namespace string) *corev1.Pod {
+func newPodForCR(cr *rulev1alpha1.OperationRule, resources []rulev1alpha1.OperationRuleSpecType, serviceAccount, namespace string) *corev1.Pod {
 	labels := map[string]string{
 		"app": cr.Name,
 	}
 	name := cr.Name + "-inferator"
 	zname := cr.Name + "-zenithr"
-	test := cr.Spec.Resources["app"]
+	objects, err := json.Marshal(resources)
+	if err != nil {
+		log.Error(err)
+	}
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -483,11 +495,7 @@ func newPodForCR(cr *rulev1alpha1.OperationRule, serviceAccount, namespace strin
 					Command: []string{"inferator"},
 					Env: []corev1.EnvVar{
 						{Name: constants.RuntimeEnv, Value: "true"},
-						{Name: "OPRULE_OBJECT_NAME", Value: test.Name},
-						{Name: "OPRULE_OBJECT_KIND", Value: test.Kind},
-						{Name: "OPRULE_OBJECT_GROUP", Value: test.GroupVersionKind().Group},
-						{Name: "OPRULE_OBJECT_VERSION", Value: test.GroupVersionKind().Version},
-						{Name: "OPRULE_OBJECT_GROUP_VERSION", Value: test.GroupVersionKind().GroupVersion().String()},
+						{Name: "OPRULE_OBJECTS", Value: string(objects)},
 						{Name: "WATCH_NAMESPACE", Value: namespace},
 						{Name: "POD_NAME", Value: name},
 						{Name: "OPERATOR_NAME", Value: name},
@@ -530,23 +538,17 @@ func newPodForCR(cr *rulev1alpha1.OperationRule, serviceAccount, namespace strin
 }
 
 // newRoleforCR ...
-func newRoleforCR(cr *rulev1alpha1.OperationRule, apiResource metav1.APIResource, namespace string) *rbacv1.Role {
-	test := cr.Spec.Resources["app"]
+func newRoleforCR(cr *rulev1alpha1.OperationRule, resources []rulev1alpha1.OperationRuleSpecType, apiResources []metav1.APIResource, namespace string) *rbacv1.Role {
 	labels := map[string]string{
 		"app": cr.Name,
 	}
-	return &rbacv1.Role{
+	role := &rbacv1.Role{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cr.Name,
 			Namespace: namespace,
 			Labels:    labels,
 		},
 		Rules: []rbacv1.PolicyRule{
-			{
-				APIGroups: []string{test.GroupVersionKind().Group},
-				Resources: []string{apiResource.Name},
-				Verbs:     apiResource.Verbs,
-			},
 			{
 				APIGroups: []string{"", "rbac.authorization.k8s.io", v1alpha1.SchemeGroupVersion.Group},
 				Resources: []string{"*"},
@@ -555,10 +557,29 @@ func newRoleforCR(cr *rulev1alpha1.OperationRule, apiResource metav1.APIResource
 			{
 				APIGroups: []string{""},
 				Resources: []string{"configmaps", "services", "pods", "pods/finalizers"},
-				Verbs:     apiResource.Verbs,
+				Verbs: []string{
+					"create",
+					"delete",
+					"deletecollection",
+					"get",
+					"list",
+					"patch",
+					"update",
+					"watch",
+				},
 			},
 		},
 	}
+	for i, apiResource := range apiResources {
+		role.Rules = append(role.Rules,
+			rbacv1.PolicyRule{
+				APIGroups: []string{resources[i].GroupVersionKind().Group},
+				Resources: []string{apiResource.Name},
+				Verbs:     apiResource.Verbs,
+			},
+		)
+	}
+	return role
 }
 
 // newRoleBindingforCR ...
@@ -730,7 +751,7 @@ func (r *Reconciler) loadOrCreate(instance *rulev1alpha1.OperationRule, genObjec
 	//Check if this object already exists
 	err := r.Service.Get(context.TODO(), types.NamespacedName{Name: genObject.GetName(), Namespace: genObject.GetNamespace()}, curObject)
 	if err != nil && errors.IsNotFound(err) {
-		log.Info("Creating a new Object", "type", reflect.TypeOf(genObject), "Name", genObject.GetName())
+		log.Info("Creating a new Object ", "type ", reflect.TypeOf(genObject), " ", genObject.GetName())
 		err = r.Service.Create(context.TODO(), genObject)
 		if err != nil {
 			log.Error("Got an error creating it", "error", err)

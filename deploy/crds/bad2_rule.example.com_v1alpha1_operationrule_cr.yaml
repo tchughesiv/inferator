@@ -1,9 +1,0 @@
-apiVersion: rule.example.com/v1alpha1
-kind: OperationRule
-metadata:
-  name: bad2-operationrule
-spec:
-  resource:
-    apiVersion: apps/v1
-    kind: TestHa
-    name: test
