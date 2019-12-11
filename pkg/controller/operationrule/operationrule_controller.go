@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"strings"
 	"time"
 
 	knative "github.com/knative/serving/pkg/apis/serving/v1"
 	routev1 "github.com/openshift/api/route/v1"
+	security1 "github.com/openshift/api/security/v1"
 	"github.com/tchughesiv/inferator/pkg/apis/rule/v1alpha1"
 	rulev1alpha1 "github.com/tchughesiv/inferator/pkg/apis/rule/v1alpha1"
+	"github.com/tchughesiv/inferator/pkg/components"
 	"github.com/tchughesiv/inferator/pkg/controller/operationrule/constants"
 	"github.com/tchughesiv/inferator/pkg/controller/operationrule/logs"
 	corev1 "k8s.io/api/core/v1"
@@ -99,6 +102,7 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 			&corev1.Service{},
 			&corev1.ServiceAccount{},
 			&rbacv1.Role{},
+			&security1.SecurityContextConstraints{},
 			&rbacv1.RoleBinding{},
 			// &knative.Service{},
 		}
@@ -192,14 +196,14 @@ func (r *Reconciler) ReconcileOperator(request reconcile.Request) (reconcile.Res
 		return reconcile.Result{}, err
 	}
 
-	for _, i := range instance.Spec.Inference.Input {
-		if _, ok := instance.Spec.Resources[i.Name]; !ok {
-			log.Error(i.Name + " is not declared as a resource")
+	for _, i := range instance.Spec.Inference.Inputs {
+		if _, ok := instance.Spec.Resources[i]; !ok {
+			log.Error(i + " is not declared as a resource")
 			return reconcile.Result{}, nil
 		}
 	}
 	for _, rules := range instance.Spec.Inference.Rules {
-		for _, output := range rules.Then.Output {
+		for _, output := range rules.Then {
 			if _, ok := instance.Spec.Resources[output.Name]; !ok {
 				log.Error(output.Name + " is not declared as a resource")
 				return reconcile.Result{}, nil
@@ -290,6 +294,33 @@ func (r *Reconciler) ReconcileOperator(request reconcile.Request) (reconcile.Res
 		return reconcile.Result{}, err
 	}
 
+	// Define a new SCC object based on existing restricted scc
+	sccClient := r.Service.GetSecurityClient().SecurityContextConstraints()
+	restrictedScc, err := sccClient.Get("restricted", metav1.GetOptions{})
+	if err != nil && errors.IsNotFound(err) {
+		log.Error("Restricted SCC not found")
+		return reconcile.Result{}, err
+	} else if err != nil {
+		return reconcile.Result{}, err
+	} else {
+		scc := newSccforCR(instance, restrictedScc, serviceAccount.Name, namespace)
+		// Set OperationRule instance as the owner and controller
+		if err := controllerutil.SetControllerReference(instance, scc, r.Service.GetScheme()); err != nil {
+			return reconcile.Result{}, err
+		}
+		// Check if this Scc already exists
+		_, err = sccClient.Get(scc.Name, metav1.GetOptions{})
+		if err != nil && errors.IsNotFound(err) {
+			log.Info("Creating a new SCC ", scc.Name)
+			_, err = sccClient.Create(scc)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+		} else if err != nil {
+			return reconcile.Result{}, err
+		}
+	}
+
 	// Define a new Role object
 	roleBinding := newRoleBindingforCR(instance, role.Name, serviceAccount.Name, namespace)
 	// Set OperationRule instance as the owner and controller
@@ -332,11 +363,7 @@ func (r *Reconciler) ReconcileOperator(request reconcile.Request) (reconcile.Res
 
 	///////// START ////////
 
-	if len(instance.Spec.Inference.Name) == 0 {
-		instance.Spec.Inference.Name = instance.Name
-	}
-
-	if instance.Spec.Inference.KNative {
+	if instance.Spec.KNative {
 		genKService := newKService(instance)
 		curKService := &knative.Service{}
 		err = r.loadOrCreate(instance, genKService, curKService)
@@ -374,7 +401,8 @@ func (r *Reconciler) ReconcileOperator(request reconcile.Request) (reconcile.Res
 	}
 
 	// Create pod object based on CR, if does not exist:
-	genPod := newPodForCR(instance, resources, serviceAccount.Name, namespace)
+	csv := components.Csv
+	genPod := newPodForCR(instance, resources, serviceAccount.Name, namespace, csv.Registry, csv.Context, csv.ImageName, csv.Tag)
 	curPod := &corev1.Pod{}
 	err = r.loadOrCreate(instance, genPod, curPod)
 	if err != nil {
@@ -404,15 +432,15 @@ func (r *Reconciler) ReconcileOperator(request reconcile.Request) (reconcile.Res
 
 	genRoute := newRouteForCR(instance)
 	curRoute := &routev1.Route{}
-	if instance.Spec.Inference.Expose {
+	if instance.Spec.Expose {
 		// Create route based on CR, if does not exist:
 		err = r.loadOrCreate(instance, genRoute, curRoute)
 		if err != nil {
 			return reconcile.Result{}, err
 		} else if existed(curRoute) {
-			if len(instance.Spec.Inference.HostName) > 0 && instance.Spec.Inference.HostName != curRoute.Spec.Host {
+			if len(instance.Spec.HostName) > 0 && instance.Spec.HostName != curRoute.Spec.Host {
 				log.Info("Detected that route hostname needs to be updated!")
-				curRoute.Spec.Host = instance.Spec.Inference.HostName
+				curRoute.Spec.Host = instance.Spec.HostName
 				err = r.Service.Update(context.TODO(), curRoute)
 				if err != nil {
 					return reconcile.Result{}, err
@@ -439,7 +467,7 @@ func (r *Reconciler) ReconcileOperator(request reconcile.Request) (reconcile.Res
 			return reconcile.Result{}, err
 		}
 	}
-	if instance.Spec.Inference.Expose {
+	if instance.Spec.Expose {
 		if len(curRoute.Name) == 0 {
 			//Route must have been just created, let's set URL status later
 			retryTime := 5
@@ -470,10 +498,12 @@ func (r *Reconciler) ReconcileOperator(request reconcile.Request) (reconcile.Res
 }
 
 // newPodForCR returns a busybox pod with the same name/namespace as the cr
-func newPodForCR(cr *rulev1alpha1.OperationRule, resources []rulev1alpha1.OperationRuleSpecType, serviceAccount, namespace string) *corev1.Pod {
+func newPodForCR(cr *rulev1alpha1.OperationRule, resources []rulev1alpha1.OperationRuleSpecType, serviceAccount, namespace, repository, context, imageName, tag string) *corev1.Pod {
 	labels := map[string]string{
 		"app": cr.Name,
 	}
+	registryName := strings.Join([]string{repository, context, imageName}, "/")
+	image := strings.Join([]string{registryName, tag}, ":")
 	name := cr.Name + "-inferator"
 	zname := cr.Name + "-zenithr"
 	objects, err := json.Marshal(resources)
@@ -491,7 +521,7 @@ func newPodForCR(cr *rulev1alpha1.OperationRule, resources []rulev1alpha1.Operat
 			Containers: []corev1.Container{
 				{
 					Name:    name,
-					Image:   "quay.io/tchughesiv/inferator",
+					Image:   image,
 					Command: []string{"inferator"},
 					Env: []corev1.EnvVar{
 						{Name: constants.RuntimeEnv, Value: "true"},
@@ -503,10 +533,10 @@ func newPodForCR(cr *rulev1alpha1.OperationRule, resources []rulev1alpha1.Operat
 				},
 				{
 					Name:  zname,
-					Image: "quay.io/bmozaffa/zenithr",
+					Image: "docker.io/ruromero/zenithr-service-jdk8",
 					Env: []corev1.EnvVar{
 						{
-							Name:  constants.GETRules,
+							Name:  constants.RulesVar,
 							Value: getJSON(cr.Spec.Inference),
 						},
 					},
@@ -535,6 +565,24 @@ func newPodForCR(cr *rulev1alpha1.OperationRule, resources []rulev1alpha1.Operat
 			},
 		},
 	}
+}
+
+// newSccforCR ...
+func newSccforCR(cr *rulev1alpha1.OperationRule, restrictedScc *security1.SecurityContextConstraints, serviceAccountName, namespace string) *security1.SecurityContextConstraints {
+	labels := map[string]string{
+		"app": cr.Name,
+	}
+	prio := int32(2147483647)
+	scc := restrictedScc.DeepCopy()
+	scc.ObjectMeta = metav1.ObjectMeta{
+		Name:   cr.Name + "-" + namespace,
+		Labels: labels,
+	}
+	scc.Priority = &prio
+	scc.Users = []string{"system:serviceaccount:" + namespace + ":" + serviceAccountName}
+	scc.Groups = nil
+
+	return scc
 }
 
 // newRoleforCR ...
@@ -660,8 +708,8 @@ func newRouteForCR(cr *rulev1alpha1.OperationRule) *routev1.Route {
 			},
 		},
 	}
-	if len(cr.Spec.Inference.HostName) > 0 {
-		route.Spec.Host = cr.Spec.Inference.HostName
+	if len(cr.Spec.HostName) > 0 {
+		route.Spec.Host = cr.Spec.HostName
 	}
 	route.SetGroupVersionKind(routev1.SchemeGroupVersion.WithKind("Route"))
 	return &route
@@ -693,11 +741,11 @@ func newKService(cr *rulev1alpha1.OperationRule) *knative.Service {
 	}
 	service.Spec.ConfigurationSpec.Template.Spec.Containers = []corev1.Container{
 		{
-			Image:           "quay.io/bmozaffa/zenithr",
+			Image:           "docker.io/ruromero/zenithr-service-jdk8",
 			ImagePullPolicy: corev1.PullAlways,
 			Env: []corev1.EnvVar{
 				{
-					Name:  constants.GETRules,
+					Name:  constants.RulesVar,
 					Value: getJSON(cr.Spec.Inference),
 				},
 			},
@@ -768,13 +816,13 @@ func (r *Reconciler) loadOrCreate(instance *rulev1alpha1.OperationRule, genObjec
 }
 
 func changed(current corev1.Container, generated corev1.Container) (changed bool, err error) {
-	currentRules := getEnvVar(current.Env, constants.GETRules)
+	currentRules := getEnvVar(current.Env, constants.RulesVar)
 	var currentSpec rulev1alpha1.OperationRuleSpec
 	err = json.Unmarshal([]byte(currentRules), &currentSpec)
 	if err != nil {
 		return
 	}
-	generatedRules := getEnvVar(generated.Env, constants.GETRules)
+	generatedRules := getEnvVar(generated.Env, constants.RulesVar)
 	var generatedSpec rulev1alpha1.OperationRuleSpec
 	err = json.Unmarshal([]byte(generatedRules), &generatedSpec)
 	if err != nil {

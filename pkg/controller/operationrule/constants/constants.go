@@ -4,7 +4,7 @@ import corev1 "k8s.io/api/core/v1"
 
 const (
 	RuntimeEnv = "INFERATOR"
-	GETRules   = "GET"
+	RulesVar   = "RULES_DEFINITION"
 )
 
 var (
