@@ -38,10 +38,10 @@ test: vet
 
 .PHONY: build
 build: test
-	operator-sdk build quay.io/tchughesiv/inferator
+	$(Q)operator-sdk build quay.io/tchughesiv/inferator:$(shell go run getversion.go -operator)
 
 .PHONY: csv
-csv:
+csv: vet
 	go run ./tools/csv-gen/csv-gen.go
 
 .PHONY: clean

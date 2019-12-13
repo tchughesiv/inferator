@@ -5,16 +5,22 @@ go 1.13
 require (
 	contrib.go.opencensus.io/exporter/prometheus v0.1.0 // indirect
 	contrib.go.opencensus.io/exporter/stackdriver v0.12.9-0.20191203174353-1cdca918b59d // indirect
+	github.com/blang/semver v3.5.1+incompatible
+	github.com/ghodss/yaml v1.0.1-0.20180820084758-c7ce16629ff4
+	github.com/go-logfmt/logfmt v0.4.0 // indirect
 	github.com/go-logr/logr v0.1.0
 	github.com/go-openapi/spec v0.19.0
 	github.com/google/go-containerregistry v0.0.0-20191202175804-2ce3ea99b462 // indirect
 	github.com/knative/serving v0.10.0
 	github.com/openshift/api v3.9.1-0.20190424152011-77b8897ec79a+incompatible
+	github.com/operator-framework/operator-lifecycle-manager v0.0.0-20190605231540-b8a4faf68e36
 	github.com/operator-framework/operator-sdk v0.12.0
 	github.com/spf13/pflag v1.0.3
 	go.opencensus.io v0.22.2 // indirect
 	go.uber.org/zap v1.10.0
+	gopkg.in/natefinch/lumberjack.v2 v2.0.0 // indirect
 	k8s.io/api v0.0.0
+	k8s.io/apiextensions-apiserver v0.0.0
 	k8s.io/apimachinery v0.0.0
 	k8s.io/apiserver v0.0.0
 	k8s.io/client-go v11.0.0+incompatible
