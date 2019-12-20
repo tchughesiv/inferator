@@ -1,11 +1,15 @@
 package operationrule
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"net/http"
 	"os"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,6 +21,8 @@ import (
 	"github.com/tchughesiv/inferator/pkg/components"
 	"github.com/tchughesiv/inferator/pkg/controller/operationrule/constants"
 	"github.com/tchughesiv/inferator/pkg/controller/operationrule/logs"
+	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -35,6 +41,7 @@ import (
 
 var log = logs.GetLogger("controller_operationrule")
 
+//KubeObject ...
 type KubeObject interface {
 	runtime.Object
 	metav1.Object
@@ -59,7 +66,7 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		return err
 	}
 	if os.Getenv(constants.RuntimeEnv) == "true" {
-		objects := []rulev1alpha1.OperationRuleSpecType{}
+		objects := map[string]rulev1alpha1.OperationRuleSpecType{}
 		watchObjects := []runtime.Object{}
 		err = json.Unmarshal([]byte(os.Getenv("OPRULE_OBJECTS")), &objects)
 		if err != nil {
@@ -139,47 +146,185 @@ type Reconciler struct {
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
 func (r *Reconciler) Reconcile(request reconcile.Request) (reconcile.Result, error) {
 	if os.Getenv(constants.RuntimeEnv) == "true" {
-		return r.ReconcileInferator(request)
+		return r.reconcileInferator(request)
 	}
-	return r.ReconcileOperator(request)
+	return r.reconcileOperator(request)
 }
 
-func (r *Reconciler) ReconcileInferator(request reconcile.Request) (reconcile.Result, error) {
+// reconcileInferator ...
+func (r *Reconciler) reconcileInferator(request reconcile.Request) (reconcile.Result, error) {
 	log := log.With("Inferator", request.Name, "Namespace", request.Namespace)
-
-	objects := []rulev1alpha1.OperationRuleSpecType{}
-	err := json.Unmarshal([]byte(os.Getenv("OPRULE_OBJECTS")), &objects)
+	inputs := []string{}
+	err := json.Unmarshal([]byte(os.Getenv("OPRULE_INPUTS")), &inputs)
 	if err != nil {
 		log.Error(err)
+		return reconcile.Result{}, err
 	}
-	for _, obj := range objects {
+	objects := map[string]rulev1alpha1.OperationRuleSpecType{}
+	err = json.Unmarshal([]byte(os.Getenv("OPRULE_OBJECTS")), &objects)
+	if err != nil {
+		log.Error(err)
+		return reconcile.Result{}, err
+	}
+	for name, obj := range objects {
+		// use this 'if' block to only reconcile resources of interest
 		if request.Name == obj.Name {
-			fmt.Println(obj.GroupVersionKind().String())
 			objInt := admission.NewObjectInterfacesFromScheme(r.Service.GetScheme())
 			// typer := objInt.GetObjectTyper()
 			// if typer.Recognizes(gvk) {
 			creator := objInt.GetObjectCreater()
 			object, err := creator.New(obj.GroupVersionKind())
 			if err != nil {
-				return reconcile.Result{}, err
+				log.Error(err)
+				continue
 			}
 			err = r.Service.Get(context.TODO(), types.NamespacedName{Name: request.Name, Namespace: request.Namespace}, object)
 			if err != nil {
-				return reconcile.Result{}, err
+				log.Error(err)
+				continue
 			}
-			prettyJSON, err := json.MarshalIndent(object, "", "    ")
-			if err != nil {
-				return reconcile.Result{}, err
+
+			// only send input objects to zenithr
+			for _, b := range inputs {
+				if name == b {
+					postObject := map[string]runtime.Object{}
+					postObject[name] = object
+					println()
+					log.Infof("Call zenithr service for %s %s", obj.GroupVersionKind().Kind, objects[name].Name)
+					println()
+
+					var buf bytes.Buffer
+					err = json.NewEncoder(&buf).Encode(&postObject)
+					if err != nil {
+						log.Error(err)
+						continue
+					}
+
+					resp, err := http.Post("http://localhost:8080/", "application/json", &buf)
+					if err != nil {
+						return reconcile.Result{Requeue: true}, err
+					}
+					defer resp.Body.Close()
+
+					body, err := ioutil.ReadAll(resp.Body)
+					if err != nil {
+						log.Error(err)
+						continue
+					}
+
+					variables := []rulev1alpha1.Variable{}
+					err = json.Unmarshal(body, &variables)
+					if err != nil {
+						log.Error(err)
+						continue
+					}
+
+					prettyJSONresp, err := json.MarshalIndent(variables, "", "    ")
+					if err != nil {
+						log.Error(err)
+						continue
+					}
+					fmt.Printf("%s\n", string(prettyJSONresp))
+
+					for _, v := range variables {
+						obj := objects[v.Name]
+						//	if objInt.GetObjectTyper().Recognizes(obj.GetObjectKind().GroupVersionKind()) {
+						object, err := creator.New(obj.GroupVersionKind())
+						if err != nil {
+							log.Error(err)
+							continue
+						}
+						namespace := request.Namespace
+						if obj.Namespace != "" {
+							namespace = obj.Namespace
+						}
+						err = r.Service.Get(context.TODO(), types.NamespacedName{Name: obj.Name, Namespace: namespace}, object)
+						if err != nil {
+							if errors.IsNotFound(err) {
+								log.Warn(obj.Kind + " " + obj.Name + " was not found")
+							}
+							log.Error(err)
+							continue
+						}
+
+						existingJSON, err := json.Marshal(&object)
+						if err != nil {
+							log.Error("Unmarshal " + v.Name)
+							continue
+						}
+
+						gResult := gjson.GetBytes(existingJSON, v.Path)
+						newJSON := existingJSON
+						if gResult.IsObject() {
+							for s, val := range v.Value {
+								gNested := gjson.Get(gResult.String(), s)
+								rval := reflect.ValueOf(gNested.Value())
+								switch rval.Kind() {
+								case reflect.Bool:
+									fmt.Printf("bool: %v\n", rval.Bool())
+								case reflect.Int, reflect.Int8, reflect.Int32, reflect.Int64:
+									fmt.Printf("int: %v\n", rval.Int())
+								case reflect.Uint, reflect.Uint8, reflect.Uint32, reflect.Uint64:
+									fmt.Printf("int: %v\n", rval.Uint())
+								case reflect.Float32, reflect.Float64:
+									new, err := strconv.ParseFloat(val, 64)
+									if err != nil {
+										log.Error(rval.Kind().String() + " conversion failed")
+										continue
+									}
+									if gNested.Value() == new {
+										continue
+									}
+									newJSON, err = sjson.SetBytes(existingJSON, v.Path+"."+s, new)
+									if err != nil {
+										log.Error(err)
+										continue
+									}
+								case reflect.String:
+									fmt.Printf("string: %v\n", rval.String())
+								case reflect.Slice:
+									fmt.Printf("slice: len=%d, %v\n", rval.Len(), rval.Interface())
+								case reflect.Map:
+									fmt.Printf("map: %v\n", rval.Interface())
+								case reflect.Chan:
+									fmt.Printf("chan %v\n", rval.Interface())
+								default:
+									println(gNested.Value())
+								}
+							}
+						}
+						if !reflect.DeepEqual(existingJSON, newJSON) {
+							objectOut, err := creator.New(obj.GroupVersionKind())
+							if err != nil {
+								log.Error(err)
+								continue
+							}
+							if err = json.Unmarshal(newJSON, &objectOut); err != nil {
+								log.Error(err)
+								continue
+							}
+							println()
+							log.Infof("Updating %s %s", objectOut.GetObjectKind().GroupVersionKind().Kind, objects[v.Name].Name)
+							println()
+							println(string(newJSON))
+							println()
+							err = r.Service.Update(context.TODO(), objectOut)
+							if err != nil {
+								log.Error(err)
+								continue
+							}
+						}
+					}
+				}
 			}
-			fmt.Printf("%s\n", string(prettyJSON))
 		}
 	}
 
-	time.Sleep(60 * time.Second)
 	return reconcile.Result{}, nil
 }
 
-func (r *Reconciler) ReconcileOperator(request reconcile.Request) (reconcile.Result, error) {
+// reconcileOperator ...
+func (r *Reconciler) reconcileOperator(request reconcile.Request) (reconcile.Result, error) {
 	log := log.With("OperationRule", request.Name, "Namespace", request.Namespace)
 
 	// Fetch the OperationRule instance
@@ -253,7 +398,7 @@ func (r *Reconciler) ReconcileOperator(request reconcile.Request) (reconcile.Res
 				}
 			}
 
-			fmt.Println("NamedSchema: " + schemaName)
+			println("NamedSchema: " + schemaName)
 		*/
 	}
 	// Define a new Role object
@@ -402,7 +547,7 @@ func (r *Reconciler) ReconcileOperator(request reconcile.Request) (reconcile.Res
 
 	// Create pod object based on CR, if does not exist:
 	csv := components.Csv
-	genPod := newPodForCR(instance, resources, serviceAccount.Name, namespace, csv.Registry, csv.Context, csv.ImageName, csv.Tag)
+	genPod := newPodForCR(instance, instance.Spec.Resources, serviceAccount.Name, namespace, csv.Registry, csv.Context, csv.ImageName, csv.Tag)
 	curPod := &corev1.Pod{}
 	err = r.loadOrCreate(instance, genPod, curPod)
 	if err != nil {
@@ -498,7 +643,7 @@ func (r *Reconciler) ReconcileOperator(request reconcile.Request) (reconcile.Res
 }
 
 // newPodForCR returns a busybox pod with the same name/namespace as the cr
-func newPodForCR(cr *rulev1alpha1.OperationRule, resources []rulev1alpha1.OperationRuleSpecType, serviceAccount, namespace, repository, context, imageName, tag string) *corev1.Pod {
+func newPodForCR(cr *rulev1alpha1.OperationRule, resources map[string]rulev1alpha1.OperationRuleSpecType, serviceAccount, namespace, repository, context, imageName, tag string) *corev1.Pod {
 	labels := map[string]string{
 		"app": cr.Name,
 	}
@@ -506,6 +651,10 @@ func newPodForCR(cr *rulev1alpha1.OperationRule, resources []rulev1alpha1.Operat
 	image := strings.Join([]string{registryName, tag}, ":")
 	name := cr.Name + "-inferator"
 	zname := cr.Name + "-zenithr"
+	inputs, err := json.Marshal(cr.Spec.Inference.Inputs)
+	if err != nil {
+		log.Error(err)
+	}
 	objects, err := json.Marshal(resources)
 	if err != nil {
 		log.Error(err)
@@ -520,20 +669,23 @@ func newPodForCR(cr *rulev1alpha1.OperationRule, resources []rulev1alpha1.Operat
 			ServiceAccountName: serviceAccount,
 			Containers: []corev1.Container{
 				{
-					Name:    name,
-					Image:   image,
-					Command: []string{"inferator"},
+					Name:            name,
+					Image:           image,
+					ImagePullPolicy: corev1.PullAlways,
+					Command:         []string{"inferator"},
 					Env: []corev1.EnvVar{
 						{Name: constants.RuntimeEnv, Value: "true"},
 						{Name: "OPRULE_OBJECTS", Value: string(objects)},
+						{Name: "OPRULE_INPUTS", Value: string(inputs)},
 						{Name: "WATCH_NAMESPACE", Value: namespace},
 						{Name: "POD_NAME", Value: name},
 						{Name: "OPERATOR_NAME", Value: name},
 					},
 				},
 				{
-					Name:  zname,
-					Image: "docker.io/ruromero/zenithr-service-jdk8",
+					Name:            zname,
+					Image:           "docker.io/ruromero/zenithr-service-jdk8",
+					ImagePullPolicy: corev1.PullAlways,
 					Env: []corev1.EnvVar{
 						{
 							Name:  constants.RulesVar,

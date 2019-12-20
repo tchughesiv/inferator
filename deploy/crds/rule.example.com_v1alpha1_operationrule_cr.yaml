@@ -32,6 +32,10 @@ spec:
         path: metadata.labels
         value:
           example: '$deployment1.metadata.name'
+      - name: deployment3
+        path: spec
+        value:
+          replicas: '1'
     - when:
       - '$deployment1.spec.replicas < 3'
       then:
