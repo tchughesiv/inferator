@@ -32,7 +32,7 @@ spec:
         - name: WATCH_NAMESPACE
           valueFrom:
             fieldRef:
-              fieldPath: metadata.namespace
+              fieldPath: metadata.annotations['olm.targetNamespaces']
         image: quay.io/tchughesiv/inferator:0.0.1
         imagePullPolicy: Always
         name: inferator

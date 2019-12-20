@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 
+	securityv1 "github.com/openshift/client-go/security/clientset/versioned/typed/security/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/discovery"
 	cachev1 "sigs.k8s.io/controller-runtime/pkg/cache"
@@ -13,6 +14,7 @@ import (
 type KubernetesPlatformService struct {
 	client          clientv1.Client
 	discoveryclient *discovery.DiscoveryClient
+	securityclient  *securityv1.SecurityV1Client
 	cache           cachev1.Cache
 	scheme          *runtime.Scheme
 }
@@ -23,10 +25,16 @@ func GetInstance(mgr manager.Manager) KubernetesPlatformService {
 		log.Error(err, "Error getting image client.")
 		return KubernetesPlatformService{}
 	}
+	securityclient, err := securityv1.NewForConfig(mgr.GetConfig())
+	if err != nil {
+		log.Error(err, "Error getting security client.")
+		return KubernetesPlatformService{}
+	}
 
 	return KubernetesPlatformService{
 		client:          mgr.GetClient(),
 		discoveryclient: discoveryclient,
+		securityclient:  securityclient,
 		cache:           mgr.GetCache(),
 		scheme:          mgr.GetScheme(),
 	}
@@ -62,6 +70,10 @@ func (service *KubernetesPlatformService) GetScheme() *runtime.Scheme {
 
 func (service *KubernetesPlatformService) GetDiscoveryClient() *discovery.DiscoveryClient {
 	return service.discoveryclient
+}
+
+func (service *KubernetesPlatformService) GetSecurityClient() *securityv1.SecurityV1Client {
+	return service.securityclient
 }
 
 func (service *KubernetesPlatformService) IsMockService() bool {

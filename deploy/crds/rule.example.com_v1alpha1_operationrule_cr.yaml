@@ -3,42 +3,43 @@ kind: OperationRule
 metadata:
   name: example-operationrule
 spec:
+  expose: true
   resources:
-    app:
+    deployment1:
       apiVersion: apps/v1
       kind: Deployment
-      name: testapp
-    db:
-      apiVersion: apps.openshift.io/v1
-      kind: DeploymentConfig
-      name: testdb
-    otherSvc:
+      name: testapp1
+    deployment2:
       apiVersion: apps/v1
-      kind: ReplicaSet
-      name: testrs
+      kind: Deployment
+      name: testapp2
+    deployment3:
+      apiVersion: apps/v1
+      kind: Deployment
+      name: testapp3
   inference:
-    name: Scaling Service
-    input:
-    - name: app
-      type: json
+    inputs:
+    - deployment1
     rules:
-    - when: spec.replicas >= 3
+    - when:
+      - '$deployment1.spec.replicas >= 3'
       then:
-        output:
-        - name: db
-          path: spec
-          value: '{"replicas": "$app.spec.replicas / 2"}'
-        - name: otherSvc
-          path: spec
-          value: '{"replicas": "$app.spec.replicas * 2"}'
-    - when: spec.replicas < 3
+      - name: deployment2
+        path: spec
+        value:
+          replicas: '$deployment1.spec.replicas / 2 + 1'
+      - name: deployment3
+        path: metadata.labels
+        value:
+          example: '$deployment1.metadata.name'
+    - when:
+      - '$deployment1.spec.replicas < 3'
       then:
-        output:
-        - name: db
-          path: spec
-          value: '{"replicas": "1"}'
-        - name: otherSvc
-          path: spec
-          value: '{"replicas": "1"}'
-    output:
-      type: json[]
+      - name: deployment2
+        path: spec
+        value:
+          replicas: '1'
+      - name: deployment3
+        path: spec
+        value:
+          replicas: '0'

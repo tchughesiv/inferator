@@ -6,7 +6,7 @@ metadata:
     categories: Integration & Delivery
     certified: "false"
     containerImage: quay.io/tchughesiv/inferator:0.0.1
-    createdAt: "2019-12-18 15:05:05"
+    createdAt: "2019-12-20 11:00:40"
     description: Inferator 0.0.1
     repository: https://github.com/tchughesiv/inferator
     support: Red Hat, Inc.
@@ -42,6 +42,9 @@ spec:
       - kind: Service
         name: ""
         version: v1
+      - kind: SecurityContextConstraint
+        name: ""
+        version: security.openshift.io/v1
       version: v1alpha1
   description: Inferator 0.0.1
   displayName: Inferator
@@ -79,7 +82,7 @@ spec:
                 - name: WATCH_NAMESPACE
                   valueFrom:
                     fieldRef:
-                      fieldPath: metadata.namespace
+                      fieldPath: metadata.annotations['olm.targetNamespaces']
                 image: quay.io/tchughesiv/inferator:0.0.1
                 imagePullPolicy: Always
                 name: inferator
@@ -116,11 +119,11 @@ spec:
         serviceAccountName: inferator
     strategy: deployment
   installModes:
-  - supported: true
+  - supported: false
     type: OwnNamespace
-  - supported: true
+  - supported: false
     type: SingleNamespace
-  - supported: true
+  - supported: false
     type: MultiNamespace
   - supported: true
     type: AllNamespaces

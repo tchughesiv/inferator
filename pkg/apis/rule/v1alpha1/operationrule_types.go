@@ -3,6 +3,7 @@ package v1alpha1
 import (
 	"context"
 
+	securityv1 "github.com/openshift/client-go/security/clientset/versioned/typed/security/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/discovery"
@@ -19,18 +20,16 @@ type OperationRuleSpec struct {
 	// Add custom validation using kubebuilder tags: https://book-v1.book.kubebuilder.io/beyond_basics/generating_crd.html
 	Resources map[string]OperationRuleSpecType `json:"resources"`
 	Inference OperationRuleSpecInference       `json:"inference"`
+	Expose    bool                             `json:"expose,omitempty"`
+	HostName  string                           `json:"hostname,omitempty"`
+	KNative   bool                             `json:"knative,omitempty"`
 }
 
 // OperationRuleSpecInference defines the desired state of OperationRule
 // +k8s:openapi-gen=true
 type OperationRuleSpecInference struct {
-	Name     string     `json:"name,omitempty"`
-	Input    []Variable `json:"input"`
-	Rules    []Rules    `json:"rules"`
-	Output   OutputType `json:"output"`
-	Expose   bool       `json:"expose,omitempty"`
-	HostName string     `json:"hostname,omitempty"`
-	KNative  bool       `json:"knative,omitempty"`
+	Inputs []string `json:"inputs"`
+	Rules  []Rules  `json:"rules"`
 }
 
 // OperationRuleSpecType defines the desired state of OperationRule
@@ -42,16 +41,15 @@ type OperationRuleSpecType struct {
 
 // +k8s:openapi-gen=true
 type Variable struct {
-	Name  string `json:"name,omitempty"`
-	Path  string `json:"path,omitempty"`
-	Type  string `json:"type,omitempty"`
-	Value string `json:"value,omitempty"`
+	Name  string            `json:"name,omitempty"`
+	Path  string            `json:"path,omitempty"`
+	Value map[string]string `json:"value,omitempty"`
 }
 
 // +k8s:openapi-gen=true
 type Rules struct {
-	When string `json:"when"`
-	Then Action `json:"then"`
+	When []string   `json:"when"`
+	Then []Variable `json:"then"`
 }
 
 // +k8s:openapi-gen=true
@@ -105,6 +103,7 @@ type PlatformService interface {
 	Update(ctx context.Context, obj runtime.Object) error
 	GetCached(ctx context.Context, key client.ObjectKey, obj runtime.Object) error
 	GetDiscoveryClient() *discovery.DiscoveryClient
+	GetSecurityClient() *securityv1.SecurityV1Client
 	GetScheme() *runtime.Scheme
 	IsMockService() bool
 }

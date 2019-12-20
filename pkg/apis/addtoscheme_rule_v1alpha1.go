@@ -8,6 +8,7 @@ import (
 	buildv1 "github.com/openshift/api/build/v1"
 	oimagev1 "github.com/openshift/api/image/v1"
 	routev1 "github.com/openshift/api/route/v1"
+	security1 "github.com/openshift/api/security/v1"
 	"github.com/tchughesiv/inferator/pkg/apis/rule/v1alpha1"
 	"github.com/tchughesiv/inferator/pkg/controller/operationrule/constants"
 	appsv1 "k8s.io/api/apps/v1"
@@ -26,6 +27,7 @@ func init() {
 		rbacv1.SchemeBuilder.AddToScheme,
 		knative.SchemeBuilder.AddToScheme,
 		oappsv1.AddToScheme,
+		security1.AddToScheme,
 		routev1.AddToScheme,
 		oimagev1.AddToScheme,
 		buildv1.AddToScheme,

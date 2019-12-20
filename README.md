@@ -1,4 +1,5 @@
 # Inferator
+
 [![Go Report](https://goreportcard.com/badge/github.com/tchughesiv/inferator)](https://goreportcard.com/report/github.com/tchughesiv/inferator)
 
 ## Requirements
@@ -68,4 +69,16 @@ Before submitting PR, please be sure to generate, vet, format, and test your cod
 
 ```bash
 make test
+```
+
+## Test zenithr
+
+```bash
+curl -v http://example-operationrule-tommy4.apps-crc.testing/ \
+ -H "Content-Type: application/json" \
+ --data-binary "@test/deployment-replicas1.json" | jq
+
+curl -v http://example-operationrule-tommy4.apps-crc.testing/ \
+ -H "Content-Type: application/json" \
+ --data-binary "@test/deployment-replicas3.json" | jq
 ```

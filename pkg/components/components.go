@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	api "github.com/tchughesiv/inferator/pkg/apis/rule/v1alpha1"
+	"github.com/tchughesiv/inferator/version"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -21,6 +22,28 @@ var Verbs = []string{
 	"patch",
 	"update",
 	"watch",
+}
+
+var Csv = CsvSettings{
+	Name:         "inferator",
+	DisplayName:  "Inferator",
+	OperatorName: "inferator",
+	CsvDir:       "community",
+	Registry:     "quay.io",
+	Context:      "tchughesiv",
+	ImageName:    "inferator",
+	Tag:          version.Version,
+}
+
+type CsvSettings struct {
+	Name         string `json:"name"`
+	DisplayName  string `json:"displayName"`
+	OperatorName string `json:"operatorName"`
+	CsvDir       string `json:"csvDir"`
+	Registry     string `json:"repository"`
+	Context      string `json:"context"`
+	ImageName    string `json:"imageName"`
+	Tag          string `json:"tag"`
 }
 
 func GetDeployment(operatorName, repository, context, imageName, tag, imagePullPolicy string) *appsv1.Deployment {
@@ -83,7 +106,7 @@ func GetDeployment(operatorName, repository, context, imageName, tag, imagePullP
 									Name: "WATCH_NAMESPACE",
 									ValueFrom: &corev1.EnvVarSource{
 										FieldRef: &corev1.ObjectFieldSelector{
-											FieldPath: "metadata.namespace",
+											FieldPath: "metadata.annotations['olm.targetNamespaces']",
 										},
 									},
 								},
