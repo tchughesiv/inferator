@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/blang/semver"
+	routev1 "github.com/openshift/api/route/v1"
 	security1 "github.com/openshift/api/security/v1"
 	csvv1 "github.com/operator-framework/operator-lifecycle-manager/pkg/api/apis/operators/v1alpha1"
 	olmversion "github.com/operator-framework/operator-lifecycle-manager/pkg/lib/version"
@@ -145,6 +146,10 @@ func main() {
 				{
 					Kind:    "Service",
 					Version: corev1.SchemeGroupVersion.String(),
+				},
+				{
+					Kind:    "Route",
+					Version: routev1.SchemeGroupVersion.String(),
 				},
 				{
 					Kind:    "SecurityContextConstraint",

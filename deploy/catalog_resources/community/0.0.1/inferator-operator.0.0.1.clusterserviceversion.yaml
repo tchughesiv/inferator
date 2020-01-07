@@ -6,7 +6,7 @@ metadata:
     categories: Integration & Delivery
     certified: "false"
     containerImage: quay.io/tchughesiv/inferator:0.0.1
-    createdAt: "2019-12-20 11:00:40"
+    createdAt: "2019-12-20 14:06:27"
     description: Inferator 0.0.1
     repository: https://github.com/tchughesiv/inferator
     support: Red Hat, Inc.
@@ -42,6 +42,9 @@ spec:
       - kind: Service
         name: ""
         version: v1
+      - kind: Route
+        name: ""
+        version: route.openshift.io/v1
       - kind: SecurityContextConstraint
         name: ""
         version: security.openshift.io/v1
