@@ -15,6 +15,7 @@ all: build
 .PHONY: mod
 mod:
 	$(Q)go mod tidy
+	$(Q)go mod vendor
 
 .PHONY: format
 format: mod
@@ -38,7 +39,7 @@ test: vet
 
 .PHONY: build
 build: test
-	$(Q)operator-sdk build quay.io/tchughesiv/inferator:$(shell go run getversion.go -operator)
+	$(Q)operator-sdk --verbose build quay.io/tchughesiv/inferator:$(shell go run getversion.go -operator)
 
 .PHONY: csv
 csv: vet

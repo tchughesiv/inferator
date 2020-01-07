@@ -476,8 +476,6 @@ github.com/openshift/api v3.9.1-0.20190716152234-9ea19f9dd578+incompatible h1:z4
 github.com/openshift/api v3.9.1-0.20190716152234-9ea19f9dd578+incompatible/go.mod h1:dh9o4Fs58gpFXGSYfnVxGR9PnV53I8TW84pQaJDdGiY=
 github.com/openshift/client-go v0.0.0-20190401163519-84c2b942258a h1:2t89qt9TR5koRb55cdTMM3NOMP238eHNeUnZ7uihHSA=
 github.com/openshift/client-go v0.0.0-20190401163519-84c2b942258a/go.mod h1:6rzn+JTr7+WYS2E1TExP4gByoABxMznR6y2SnUIkmxk=
-github.com/openshift/client-go v3.9.0+incompatible h1:13k3Ok0B7TA2hA3bQW2aFqn6y04JaJWdk7ITTyg+Ek0=
-github.com/openshift/client-go v3.9.0+incompatible/go.mod h1:6rzn+JTr7+WYS2E1TExP4gByoABxMznR6y2SnUIkmxk=
 github.com/openshift/origin v0.0.0-20160503220234-8f127d736703 h1:KLVRXtjLhZHVtrcdnuefaI2Bf182EEiTfEVDHokoyng=
 github.com/openshift/origin v0.0.0-20160503220234-8f127d736703/go.mod h1:0Rox5r9C8aQn6j1oAOQ0c1uC86mYbUFObzjBRvUKHII=
 github.com/operator-framework/go-appr v0.0.0-20180917210448-f2aef88446f2/go.mod h1:YNzwUx1i6C4dXWcffyq3yaIb0rh/K8/OvQ4vG0SNlSw=
