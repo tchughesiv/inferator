@@ -3,7 +3,6 @@ package v1alpha1
 import (
 	"context"
 
-	securityv1 "github.com/openshift/client-go/security/clientset/versioned/typed/security/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/discovery"
@@ -103,7 +102,6 @@ type PlatformService interface {
 	Update(ctx context.Context, obj runtime.Object) error
 	GetCached(ctx context.Context, key client.ObjectKey, obj runtime.Object) error
 	GetDiscoveryClient() *discovery.DiscoveryClient
-	GetSecurityClient() *securityv1.SecurityV1Client
 	GetScheme() *runtime.Scheme
 	IsMockService() bool
 }

@@ -15,7 +15,6 @@ import (
 
 	knative "github.com/knative/serving/pkg/apis/serving/v1"
 	routev1 "github.com/openshift/api/route/v1"
-	security1 "github.com/openshift/api/security/v1"
 	"github.com/tchughesiv/inferator/pkg/apis/rule/v1alpha1"
 	rulev1alpha1 "github.com/tchughesiv/inferator/pkg/apis/rule/v1alpha1"
 	"github.com/tchughesiv/inferator/pkg/components"
@@ -109,7 +108,6 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 			&corev1.Service{},
 			&corev1.ServiceAccount{},
 			&rbacv1.Role{},
-			&security1.SecurityContextConstraints{},
 			&rbacv1.RoleBinding{},
 			// &knative.Service{},
 		}
@@ -242,8 +240,9 @@ func (r *Reconciler) reconcileInferator(request reconcile.Request) (reconcile.Re
 						if err != nil {
 							if errors.IsNotFound(err) {
 								log.Warn(obj.Kind + " " + obj.Name + " was not found")
+							} else {
+								log.Error(err)
 							}
-							log.Error(err)
 							continue
 						}
 
@@ -437,33 +436,6 @@ func (r *Reconciler) reconcileOperator(request reconcile.Request) (reconcile.Res
 		}
 	} else if err != nil {
 		return reconcile.Result{}, err
-	}
-
-	// Define a new SCC object based on existing restricted scc
-	sccClient := r.Service.GetSecurityClient().SecurityContextConstraints()
-	restrictedScc, err := sccClient.Get("restricted", metav1.GetOptions{})
-	if err != nil && errors.IsNotFound(err) {
-		log.Error("Restricted SCC not found")
-		return reconcile.Result{}, err
-	} else if err != nil {
-		return reconcile.Result{}, err
-	} else {
-		scc := newSccforCR(instance, restrictedScc, serviceAccount.Name, namespace)
-		// Set OperationRule instance as the owner and controller
-		if err := controllerutil.SetControllerReference(instance, scc, r.Service.GetScheme()); err != nil {
-			return reconcile.Result{}, err
-		}
-		// Check if this Scc already exists
-		_, err = sccClient.Get(scc.Name, metav1.GetOptions{})
-		if err != nil && errors.IsNotFound(err) {
-			log.Info("Creating a new SCC ", scc.Name)
-			_, err = sccClient.Create(scc)
-			if err != nil {
-				return reconcile.Result{}, err
-			}
-		} else if err != nil {
-			return reconcile.Result{}, err
-		}
 	}
 
 	// Define a new Role object
@@ -717,24 +689,6 @@ func newPodForCR(cr *rulev1alpha1.OperationRule, resources map[string]rulev1alph
 			},
 		},
 	}
-}
-
-// newSccforCR ...
-func newSccforCR(cr *rulev1alpha1.OperationRule, restrictedScc *security1.SecurityContextConstraints, serviceAccountName, namespace string) *security1.SecurityContextConstraints {
-	labels := map[string]string{
-		"app": cr.Name,
-	}
-	prio := int32(2147483647)
-	scc := restrictedScc.DeepCopy()
-	scc.ObjectMeta = metav1.ObjectMeta{
-		Name:   cr.Name + "-" + namespace,
-		Labels: labels,
-	}
-	scc.Priority = &prio
-	scc.Users = []string{"system:serviceaccount:" + namespace + ":" + serviceAccountName}
-	scc.Groups = nil
-
-	return scc
 }
 
 // newRoleforCR ...

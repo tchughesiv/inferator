@@ -3,7 +3,6 @@ kind: OperationRule
 metadata:
   name: example-operationrule
 spec:
-  expose: true
   resources:
     deployment1:
       apiVersion: apps/v1
@@ -47,3 +46,4 @@ spec:
         path: spec
         value:
           replicas: '0'
+  # expose: true
