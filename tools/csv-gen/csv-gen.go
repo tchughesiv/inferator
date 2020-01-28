@@ -110,10 +110,10 @@ func main() {
 	templateStruct.Spec.Labels = tLabels
 	templateStruct.Spec.Selector = &metav1.LabelSelector{MatchLabels: tLabels}
 	templateStruct.Spec.InstallModes = []csvv1.InstallMode{
-		{Type: csvv1.InstallModeTypeOwnNamespace, Supported: false},
-		{Type: csvv1.InstallModeTypeSingleNamespace, Supported: false},
+		{Type: csvv1.InstallModeTypeOwnNamespace, Supported: true},
+		{Type: csvv1.InstallModeTypeSingleNamespace, Supported: true},
 		{Type: csvv1.InstallModeTypeMultiNamespace, Supported: false},
-		{Type: csvv1.InstallModeTypeAllNamespaces, Supported: true},
+		{Type: csvv1.InstallModeTypeAllNamespaces, Supported: false},
 	}
 	templateStruct.Spec.CustomResourceDefinitions.Owned = []csvv1.CRDDescription{
 		{
