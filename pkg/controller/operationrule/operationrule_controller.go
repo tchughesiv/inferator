@@ -252,46 +252,7 @@ func (r *Reconciler) reconcileInferator(request reconcile.Request) (reconcile.Re
 							continue
 						}
 
-						gResult := gjson.GetBytes(existingJSON, v.Path)
-						newJSON := existingJSON
-						if gResult.IsObject() {
-							for s, val := range v.Value {
-								gNested := gjson.Get(gResult.String(), s)
-								rval := reflect.ValueOf(gNested.Value())
-								switch rval.Kind() {
-								case reflect.Bool:
-									fmt.Printf("bool: %v\n", rval.Bool())
-								case reflect.Int, reflect.Int8, reflect.Int32, reflect.Int64:
-									fmt.Printf("int: %v\n", rval.Int())
-								case reflect.Uint, reflect.Uint8, reflect.Uint32, reflect.Uint64:
-									fmt.Printf("int: %v\n", rval.Uint())
-								case reflect.Float32, reflect.Float64:
-									new, err := strconv.ParseFloat(val, 64)
-									if err != nil {
-										log.Error(rval.Kind().String() + " conversion failed")
-										continue
-									}
-									if gNested.Value() == new {
-										continue
-									}
-									newJSON, err = sjson.SetBytes(existingJSON, v.Path+"."+s, new)
-									if err != nil {
-										log.Error(err)
-										continue
-									}
-								case reflect.String:
-									fmt.Printf("string: %v\n", rval.String())
-								case reflect.Slice:
-									fmt.Printf("slice: len=%d, %v\n", rval.Len(), rval.Interface())
-								case reflect.Map:
-									fmt.Printf("map: %v\n", rval.Interface())
-								case reflect.Chan:
-									fmt.Printf("chan %v\n", rval.Interface())
-								default:
-									println(gNested.Value())
-								}
-							}
-						}
+						newJSON := fieldTypeConversion(existingJSON, v)
 						if !reflect.DeepEqual(existingJSON, newJSON) {
 							objectOut, err := creator.New(obj.GroupVersionKind())
 							if err != nil {
@@ -302,11 +263,7 @@ func (r *Reconciler) reconcileInferator(request reconcile.Request) (reconcile.Re
 								log.Error(err)
 								continue
 							}
-							println()
 							log.Infof("Updating %s %s", objectOut.GetObjectKind().GroupVersionKind().Kind, objects[v.Name].Name)
-							println()
-							println(string(newJSON))
-							println()
 							err = r.Service.Update(context.TODO(), objectOut)
 							if err != nil {
 								log.Error(err)
@@ -320,6 +277,125 @@ func (r *Reconciler) reconcileInferator(request reconcile.Request) (reconcile.Re
 	}
 
 	return reconcile.Result{}, nil
+}
+
+func fieldTypeConversion(existingJSON []byte, v rulev1alpha1.Variable) []byte {
+	var err error
+	newJSON := existingJSON
+	gResult := gjson.GetBytes(existingJSON, v.Path)
+	if gResult.IsObject() {
+		for s, val := range v.Value {
+			gNested := gjson.Get(gResult.String(), s)
+			rval := reflect.ValueOf(gNested.Value())
+			switch rval.Kind() {
+			case reflect.Bool:
+				new, err := strconv.ParseBool(val)
+				if err != nil {
+					log.Error(rval.Kind().String() + " conversion failed")
+				}
+				if gNested.Value() != val {
+					newJSON, err = sjson.SetBytes(existingJSON, v.Path+"."+s, new)
+					if err != nil {
+						log.Error(err)
+					}
+				}
+			case reflect.Int:
+				new, err := strconv.ParseInt(val, 10, 0)
+				if err != nil {
+					log.Error(rval.Kind().String() + " conversion failed")
+				}
+				if gNested.Value() != val {
+					newJSON, err = sjson.SetBytes(existingJSON, v.Path+"."+s, new)
+					if err != nil {
+						log.Error(err)
+					}
+				}
+			case reflect.Int8:
+				new, err := strconv.ParseInt(val, 10, 8)
+				if err != nil {
+					log.Error(rval.Kind().String() + " conversion failed")
+				}
+				if gNested.Value() != val {
+					newJSON, err = sjson.SetBytes(existingJSON, v.Path+"."+s, new)
+					if err != nil {
+						log.Error(err)
+					}
+				}
+			case reflect.Int32:
+				new, err := strconv.ParseInt(val, 10, 32)
+				if err != nil {
+					log.Error(rval.Kind().String() + " conversion failed")
+				}
+				if gNested.Value() != val {
+					newJSON, err = sjson.SetBytes(existingJSON, v.Path+"."+s, new)
+					if err != nil {
+						log.Error(err)
+					}
+				}
+			case reflect.Int64:
+				new, err := strconv.ParseInt(val, 10, 64)
+				if err != nil {
+					log.Error(rval.Kind().String() + " conversion failed")
+				}
+				if gNested.Value() != val {
+					newJSON, err = sjson.SetBytes(existingJSON, v.Path+"."+s, new)
+					if err != nil {
+						log.Error(err)
+					}
+				}
+			case reflect.Uint, reflect.Uint8, reflect.Uint32, reflect.Uint64:
+				fmt.Printf("int: %v\n", rval.Uint())
+				new, err := strconv.ParseUint(val, 10, 64)
+				if err != nil {
+					log.Error(rval.Kind().String() + " conversion failed")
+				}
+				if gNested.Value() != val {
+					newJSON, err = sjson.SetBytes(existingJSON, v.Path+"."+s, new)
+					if err != nil {
+						log.Error(err)
+					}
+				}
+			case reflect.Float32:
+				new, err := strconv.ParseFloat(val, 32)
+				if err != nil {
+					log.Error(rval.Kind().String() + " conversion failed")
+				}
+				if gNested.Value() != val {
+					newJSON, err = sjson.SetBytes(existingJSON, v.Path+"."+s, new)
+					if err != nil {
+						log.Error(err)
+					}
+				}
+			case reflect.Float64:
+				new, err := strconv.ParseFloat(val, 64)
+				if err != nil {
+					log.Error(rval.Kind().String() + " conversion failed")
+				}
+				if gNested.Value() != val {
+					newJSON, err = sjson.SetBytes(existingJSON, v.Path+"."+s, new)
+					if err != nil {
+						log.Error(err)
+					}
+				}
+			case reflect.String:
+				if gNested.Value() != val {
+					newJSON, err = sjson.SetBytes(existingJSON, v.Path+"."+s, val)
+					if err != nil {
+						log.Error(err)
+					}
+				}
+			case reflect.Slice:
+				fmt.Printf("slice: len=%d, %v\n", rval.Len(), rval.Interface())
+			case reflect.Map:
+				fmt.Printf("map: %v\n", rval.Interface())
+			case reflect.Chan:
+				fmt.Printf("chan %v\n", rval.Interface())
+			default:
+				println(gNested.Value())
+			}
+		}
+	}
+	return newJSON
 }
 
 // reconcileOperator ...

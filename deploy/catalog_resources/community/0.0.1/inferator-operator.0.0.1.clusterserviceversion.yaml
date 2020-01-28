@@ -6,7 +6,7 @@ metadata:
     categories: Integration & Delivery
     certified: "false"
     containerImage: quay.io/tchughesiv/inferator:0.0.1
-    createdAt: "2019-12-20 14:06:27"
+    createdAt: "2020-01-29 11:14:11"
     description: Inferator 0.0.1
     repository: https://github.com/tchughesiv/inferator
     support: Red Hat, Inc.
@@ -122,13 +122,13 @@ spec:
         serviceAccountName: inferator
     strategy: deployment
   installModes:
-  - supported: false
+  - supported: true
     type: OwnNamespace
-  - supported: false
+  - supported: true
     type: SingleNamespace
   - supported: false
     type: MultiNamespace
-  - supported: true
+  - supported: false
     type: AllNamespaces
   keywords:
   - inferator
