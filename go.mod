@@ -29,6 +29,7 @@ require (
 	k8s.io/apiserver v0.0.0
 	k8s.io/client-go v11.0.0+incompatible
 	k8s.io/kube-openapi v0.0.0-20190918143330-0270cf2f1c1d
+	k8s.io/kubernetes v1.15.4
 	knative.dev/pkg v0.0.0-20191204004536-da3d090aa9ee // indirect
 	knative.dev/serving v0.10.0 // indirect
 	sigs.k8s.io/controller-runtime v0.3.0

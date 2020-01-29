@@ -10,10 +10,15 @@ import (
 	appv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 // TestFieldConversions ...
 func TestFieldConversions(t *testing.T) {
+	registerObjs := []runtime.Object{&rulev1alpha1.OperationRule{}, &rulev1alpha1.OperationRuleList{}, &appv1.Deployment{}}
+	rulev1alpha1.SchemeBuilder.Register(registerObjs...)
+	scheme, _ := rulev1alpha1.SchemeBuilder.Build()
+
 	priority := int32(5)
 	termSec := int64(60)
 	activeSec := int64(45)
@@ -31,13 +36,10 @@ func TestFieldConversions(t *testing.T) {
 			},
 		},
 	}
-	existingJSON, err := json.Marshal(&dep)
-	assert.Nil(t, err)
-
 	newPriority := priority - 2
 	newTermSec := termSec * 2
 	newActiveSec := activeSec * 2
-	//hostNetwork := true
+	hostNetwork := true
 	v := rulev1alpha1.Variable{
 		Name: dep.Name,
 		Path: "spec.template.spec",
@@ -45,18 +47,29 @@ func TestFieldConversions(t *testing.T) {
 			"activeDeadlineSeconds":         strconv.Itoa(int(newActiveSec)),
 			"priority":                      strconv.Itoa(int(newPriority)),
 			"terminationGracePeriodSeconds": strconv.Itoa(int(newTermSec)),
-			//"hostNetwork":                   strconv.FormatBool(hostNetwork),
+			"hostNetwork":                   strconv.FormatBool(hostNetwork),
 		},
 	}
-	newJSON := fieldTypeConversion(existingJSON, v)
-	assert.NotEqual(t, existingJSON, newJSON)
+	objectOut, _ := fieldTypeConversion(&dep, v, scheme)
 
-	newdep := &appv1.Deployment{}
-	err = json.Unmarshal(newJSON, newdep)
+	newJSON, err := json.Marshal(&objectOut)
 	assert.Nil(t, err)
 
-	assert.Equal(t, newPriority, *newdep.Spec.Template.Spec.Priority)
-	assert.Equal(t, newTermSec, *newdep.Spec.Template.Spec.TerminationGracePeriodSeconds)
-	assert.Equal(t, newActiveSec, *newdep.Spec.Template.Spec.ActiveDeadlineSeconds)
-	//assert.Equal(t, hostNetwork, newdep.Spec.Template.Spec.HostNetwork)
+	newDep := &appv1.Deployment{}
+	err = json.Unmarshal(newJSON, newDep)
+	assert.Nil(t, err)
+
+	assert.NotEqual(t, &dep, newDep)
+	assert.Equal(t, dep.Name, newDep.Name)
+
+	assert.Equal(t, newPriority, *newDep.Spec.Template.Spec.Priority)
+	assert.Equal(t, &newPriority, newDep.Spec.Template.Spec.Priority)
+
+	assert.Equal(t, newTermSec, *newDep.Spec.Template.Spec.TerminationGracePeriodSeconds)
+	assert.Equal(t, &newTermSec, newDep.Spec.Template.Spec.TerminationGracePeriodSeconds)
+
+	assert.Equal(t, newActiveSec, *newDep.Spec.Template.Spec.ActiveDeadlineSeconds)
+	assert.Equal(t, &newActiveSec, newDep.Spec.Template.Spec.ActiveDeadlineSeconds)
+
+	//assert.Equal(t, hostNetwork, newDep.Spec.Template.Spec.HostNetwork)
 }
