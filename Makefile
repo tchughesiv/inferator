@@ -35,7 +35,7 @@ vet: sdk-generate
 
 .PHONY: test
 test: vet
-	$(Q)go test ./...
+	$(Q)go test -count=1 ./...
 
 .PHONY: build
 build: test
