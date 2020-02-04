@@ -149,6 +149,22 @@ func (r *Reconciler) Reconcile(request reconcile.Request) (reconcile.Result, err
 	return r.reconcileOperator(request)
 }
 
+func itemExists(slice interface{}, item interface{}) bool {
+	s := reflect.ValueOf(slice)
+
+	if s.Kind() != reflect.Slice {
+		panic("Invalid data-type")
+	}
+
+	for i := 0; i < s.Len(); i++ {
+		if s.Index(i).Interface() == item {
+			return true
+		}
+	}
+
+	return false
+}
+
 // reconcileInferator ...
 func (r *Reconciler) reconcileInferator(request reconcile.Request) (reconcile.Result, error) {
 	log := log.With("Inferator", request.Name, "Namespace", request.Namespace)
@@ -164,102 +180,118 @@ func (r *Reconciler) reconcileInferator(request reconcile.Request) (reconcile.Re
 		log.Error(err)
 		return reconcile.Result{}, err
 	}
+	postObject := map[string]runtime.Object{}
+	objInt := admission.NewObjectInterfacesFromScheme(r.Service.GetScheme())
+	creator := objInt.GetObjectCreater()
+	objectNames := []string{}
+
+	// only reconcile resources of interest
 	for name, obj := range objects {
-		// use this 'if' block to only reconcile resources of interest
-		if request.Name == obj.Name {
-			objInt := admission.NewObjectInterfacesFromScheme(r.Service.GetScheme())
-			creator := objInt.GetObjectCreater()
+		if obj.Namespace == "" {
+			obj.Namespace = request.Namespace
+			objects[name] = obj
+		}
+		if itemExists(inputs, name) {
 			object, err := creator.New(obj.GroupVersionKind())
 			if err != nil {
 				log.Error(err)
 			}
-			err = r.Service.Get(context.TODO(), types.NamespacedName{Name: request.Name, Namespace: request.Namespace}, object)
+			objectNames = append(objectNames, obj.Name)
+			postObject[name] = object
+		}
+	}
+
+	var post bool
+	if itemExists(objectNames, request.Name) {
+		// only send 'input' objects to zenithr
+		for name, object := range postObject {
+			err = r.Service.Get(context.TODO(), types.NamespacedName{Name: objects[name].Name, Namespace: objects[name].Namespace}, object)
+			if err != nil {
+				log.Error(err)
+			} else {
+				if objects[name].Name == request.Name {
+					println()
+					log.Infof("Call zenithr service for %s %s", object.GetObjectKind().GroupVersionKind().Kind, request.Name)
+					println()
+				}
+				post = true
+				postObject[name] = object
+			}
+		}
+	}
+
+	if post {
+		var buf bytes.Buffer
+		err = json.NewEncoder(&buf).Encode(&postObject)
+		if err != nil {
+			log.Error(err)
+		}
+
+		resp, err := http.Post("http://localhost:8080/", "application/json", &buf)
+		if err != nil {
+			return reconcile.Result{Requeue: true}, err
+		}
+		defer resp.Body.Close()
+
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			log.Error(err)
+		}
+
+		variables := []rulev1alpha1.Variable{}
+		err = json.Unmarshal(body, &variables)
+		if err != nil {
+			log.Error(err)
+		}
+
+		prettyJSONresp, err := json.MarshalIndent(variables, "", "    ")
+		if err != nil {
+			log.Error(err)
+		}
+		fmt.Printf("%s\n", string(prettyJSONresp))
+
+		for _, v := range variables {
+			var update bool
+			obj := objects[v.Name]
+			//	if objInt.GetObjectTyper().Recognizes(obj.GetObjectKind().GroupVersionKind()) {
+			object, err := creator.New(obj.GroupVersionKind())
 			if err != nil {
 				log.Error(err)
 			}
+			err = r.Service.Get(context.TODO(), types.NamespacedName{Name: obj.Name, Namespace: obj.Namespace}, object)
+			if err != nil {
+				if errors.IsNotFound(err) {
+					log.Warn(obj.Kind + " " + obj.Name + " for " + v.Name + " was not found")
+				} else {
+					log.Error(err)
+				}
+			} else {
+				update = true
+			}
 
-			// only send input objects to zenithr
-			for _, b := range inputs {
-				if name == b {
-					postObject := map[string]runtime.Object{}
-					postObject[name] = object
-					println()
-					log.Infof("Call zenithr service for %s %s", obj.GroupVersionKind().Kind, objects[name].Name)
-					println()
-
-					var buf bytes.Buffer
-					err = json.NewEncoder(&buf).Encode(&postObject)
+			if update {
+				existingJSON, err := json.Marshal(&object)
+				if err != nil {
+					log.Error("Unmarshal " + v.Name)
+				}
+				newJSON := fieldTypeConversion(v, object)
+				if !reflect.DeepEqual(existingJSON, newJSON) {
+					objectOut, err := creator.New(obj.GroupVersionKind())
 					if err != nil {
 						log.Error(err)
 					}
-
-					resp, err := http.Post("http://localhost:8080/", "application/json", &buf)
-					if err != nil {
-						return reconcile.Result{Requeue: true}, err
-					}
-					defer resp.Body.Close()
-
-					body, err := ioutil.ReadAll(resp.Body)
-					if err != nil {
-						log.Error(err)
-					}
-
-					variables := []rulev1alpha1.Variable{}
-					err = json.Unmarshal(body, &variables)
-					if err != nil {
-						log.Error(err)
-					}
-
-					prettyJSONresp, err := json.MarshalIndent(variables, "", "    ")
-					if err != nil {
-						log.Error(err)
-					}
-					fmt.Printf("%s\n", string(prettyJSONresp))
-
-					for _, v := range variables {
-						obj := objects[v.Name]
-						//	if objInt.GetObjectTyper().Recognizes(obj.GetObjectKind().GroupVersionKind()) {
-						object, err := creator.New(obj.GroupVersionKind())
-						if err != nil {
+					if err = json.Unmarshal(newJSON, &objectOut); err != nil {
+						if ute, ok := err.(*json.UnmarshalTypeError); ok {
+							rval := reflect.Zero(ute.Type)
+							fmt.Println("Unmarshal error - should be type '" + rval.Kind().String() + "'")
+						} else {
 							log.Error(err)
 						}
-						namespace := request.Namespace
-						if obj.Namespace != "" {
-							namespace = obj.Namespace
-						}
-						err = r.Service.Get(context.TODO(), types.NamespacedName{Name: obj.Name, Namespace: namespace}, object)
-						if err != nil {
-							if errors.IsNotFound(err) {
-								log.Warn(obj.Kind + " " + obj.Name + " was not found")
-							} else {
-								log.Error(err)
-							}
-						}
-
-						existingJSON, err := json.Marshal(&object)
-						if err != nil {
-							log.Error("Unmarshal " + v.Name)
-						}
-						newJSON := fieldTypeConversion(v, object)
-						if !reflect.DeepEqual(existingJSON, newJSON) {
-							objectOut, err := creator.New(obj.GroupVersionKind())
-							if err != nil {
-								log.Error(err)
-							}
-							if err = json.Unmarshal(newJSON, &objectOut); err != nil {
-								if ute, ok := err.(*json.UnmarshalTypeError); ok {
-									rval := reflect.Zero(ute.Type)
-									fmt.Println("Unmarshal error - should be type '" + rval.Kind().String() + "'")
-								} else {
-									log.Error(err)
-								}
-							}
-							log.Infof("Updating %s %s", objectOut.GetObjectKind().GroupVersionKind().Kind, objects[v.Name].Name)
-							err = r.Service.Update(context.TODO(), objectOut)
-							if err != nil {
-								log.Error(err)
-							}
-						}
+					}
+					log.Infof("Updating %s %s", objectOut.GetObjectKind().GroupVersionKind().Kind, objects[v.Name].Name)
+					err = r.Service.Update(context.TODO(), objectOut)
+					if err != nil {
+						log.Error(err)
 					}
 				}
 			}
@@ -640,16 +672,15 @@ func (r *Reconciler) reconcileOperator(request reconcile.Request) (reconcile.Res
 		}
 	}
 
-	// Create service object based on CR, if does not exist:
-	curService := &corev1.Service{}
-	err = r.loadOrCreate(instance, newServiceForCR(instance), curService)
-	if err != nil {
-		return reconcile.Result{}, err
-	}
-
 	genRoute := newRouteForCR(instance)
 	curRoute := &routev1.Route{}
 	if instance.Spec.Expose {
+		// Create service object based on CR, if does not exist:
+		curService := &corev1.Service{}
+		err = r.loadOrCreate(instance, newServiceForCR(instance), curService)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
 		// Create route based on CR, if does not exist:
 		err = r.loadOrCreate(instance, genRoute, curRoute)
 		if err != nil {
