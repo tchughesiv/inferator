@@ -7,7 +7,6 @@ require (
 	contrib.go.opencensus.io/exporter/stackdriver v0.12.9-0.20191203174353-1cdca918b59d // indirect
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/ghodss/yaml v1.0.1-0.20180820084758-c7ce16629ff4
-	github.com/go-logfmt/logfmt v0.4.0 // indirect
 	github.com/go-logr/logr v0.1.0
 	github.com/go-openapi/spec v0.19.0
 	github.com/google/go-containerregistry v0.0.0-20191202175804-2ce3ea99b462 // indirect
@@ -22,7 +21,6 @@ require (
 	github.com/tidwall/sjson v1.0.4
 	go.opencensus.io v0.22.2 // indirect
 	go.uber.org/zap v1.10.0
-	gopkg.in/natefinch/lumberjack.v2 v2.0.0 // indirect
 	k8s.io/api v0.0.0
 	k8s.io/apiextensions-apiserver v0.0.0
 	k8s.io/apimachinery v0.0.0

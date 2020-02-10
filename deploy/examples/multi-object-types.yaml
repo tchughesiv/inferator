@@ -1,0 +1,65 @@
+apiVersion: rule.example.com/v1alpha1
+kind: OperationRule
+metadata:
+  name: multi-object-type
+spec:
+  resources:
+    deployment1:
+      apiVersion: apps/v1
+      kind: Deployment
+      name: testdep
+    depConfig1:
+      apiVersion: apps.openshift.io/v1
+      kind: DeploymentConfig
+      name: testdc
+    replicaSet1:
+      apiVersion: apps/v1
+      kind: ReplicaSet
+      name: testrs
+  inference:
+    inputs:
+    - replicaSet1
+    - deployment1
+    - depConfig1
+    rules:
+    - when:
+      - '$deployment1.spec.replicas >= 2'
+      then:
+      - name: depConfig1
+        path: spec
+        value:
+          replicas: '$deployment1.spec.replicas / 2 + 1'
+      - name: depConfig1
+        path: spec.template.metadata.labels
+        value:
+          depName: '$deployment1.metadata.name'
+      - name: replicaSet1
+        path: spec
+        value:
+          replicas: '2'
+      - name: replicaSet1
+        path: spec.template.metadata.labels
+        value:
+          test: 'two'
+    - when:
+      - '$deployment1.spec.replicas < 2'
+      then:
+      - name: replicaSet1
+        path: spec
+        value:
+          replicas: '1'
+      - name: replicaSet1
+        path: spec.template.metadata.labels
+        value:
+          test: 'one'
+    - when:
+      - '$replicaSet1.spec.replicas == 1'
+      then:
+      - name: depConfig1
+        path: spec
+        value:
+          replicas: '1'
+      - name: depConfig1
+        path: spec.template.metadata.labels
+        value:
+          depName: ''
