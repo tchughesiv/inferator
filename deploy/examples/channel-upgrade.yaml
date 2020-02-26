@@ -1,0 +1,29 @@
+apiVersion: rule.example.com/v1alpha1
+kind: OperationRule
+metadata:
+  name: channel-upgrade
+spec:
+  inference:
+    inputs:
+    - version
+    rules:
+    - when:
+      - $version.status.desired.version >= 4.3
+      - $version.status.desired.version < 4.4
+      - $version.status.history[0].version >= 4.3
+      - $version.status.history[0].state == "Completed"
+      then:
+      - name: ocsSub
+        path: spec
+        value:
+          channel: $version.spec.channel
+  resources:
+    ocsSub:
+      apiVersion: operators.coreos.com/v1alpha1
+      kind: Subscription
+      name: ocs-operator
+      namespace: openshift-operators
+    version:
+      apiVersion: config.openshift.io/v1
+      kind: ClusterVersion
+      name: version

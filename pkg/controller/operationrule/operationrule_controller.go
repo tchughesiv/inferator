@@ -532,32 +532,13 @@ func (r *Reconciler) reconcileOperator(request reconcile.Request) (reconcile.Res
 			println("NamedSchema: " + schemaName)
 		*/
 	}
-	// Define a new Role object
-	role := newRoleforCR(instance, resources, apiResources, namespace)
-	// Set OperationRule instance as the owner and controller
-	if err := controllerutil.SetControllerReference(instance, role, r.Service.GetScheme()); err != nil {
-		return reconcile.Result{}, err
-	}
-	// Check if this Role already exists
-	foundRole := &rbacv1.Role{}
-	err = r.Service.Get(context.TODO(), types.NamespacedName{Name: role.Name, Namespace: role.Namespace}, foundRole)
-	if err != nil && errors.IsNotFound(err) {
-		log.Info("Creating a new Role in Namespace ", role.Namespace, " Name ", role.Name)
-		err = r.Service.Create(context.TODO(), role)
-		if err != nil {
-			return reconcile.Result{}, err
-		}
-	} else if err != nil {
-		return reconcile.Result{}, err
-	}
-
-	// Define a new Role object
+	// Define a new SA object
 	serviceAccount := newSAforCR(instance, namespace)
 	// Set OperationRule instance as the owner and controller
 	if err := controllerutil.SetControllerReference(instance, serviceAccount, r.Service.GetScheme()); err != nil {
 		return reconcile.Result{}, err
 	}
-	// Check if this Role already exists
+	// Check if this SA already exists
 	foundSA := &corev1.ServiceAccount{}
 	err = r.Service.Get(context.TODO(), types.NamespacedName{Name: serviceAccount.Name, Namespace: serviceAccount.Namespace}, foundSA)
 	if err != nil && errors.IsNotFound(err) {
@@ -570,25 +551,83 @@ func (r *Reconciler) reconcileOperator(request reconcile.Request) (reconcile.Res
 		return reconcile.Result{}, err
 	}
 
-	// Define a new Role object
-	roleBinding := newRoleBindingforCR(instance, role.Name, serviceAccount.Name, namespace)
-	// Set OperationRule instance as the owner and controller
-	if err := controllerutil.SetControllerReference(instance, roleBinding, r.Service.GetScheme()); err != nil {
-		return reconcile.Result{}, err
-	}
-	// Check if this Role already exists
-	foundRoleBinding := &rbacv1.RoleBinding{}
-	err = r.Service.Get(context.TODO(), types.NamespacedName{Name: roleBinding.Name, Namespace: roleBinding.Namespace}, foundRoleBinding)
-	if err != nil && errors.IsNotFound(err) {
-		log.Info("Creating a new RoleBinding in Namespace ", roleBinding.Namespace, " Name ", roleBinding.Name)
-		err = r.Service.Create(context.TODO(), roleBinding)
-		if err != nil {
+	if os.Getenv("OPERATOR_GROUP") == "global-operators" {
+		// Define a new ClusterRole object
+		clusterRole := newClusterRoleforCR(instance, resources, apiResources)
+		// Set OperationRule instance as the owner and controller
+		if err := controllerutil.SetControllerReference(instance, clusterRole, r.Service.GetScheme()); err != nil {
 			return reconcile.Result{}, err
 		}
-	} else if err != nil {
-		return reconcile.Result{}, err
-	}
+		// Check if this ClusterRole already exists
+		foundClusterRole := &rbacv1.ClusterRole{}
+		err = r.Service.Get(context.TODO(), types.NamespacedName{Name: clusterRole.Name, Namespace: ""}, foundClusterRole)
+		if err != nil && errors.IsNotFound(err) {
+			log.Info("Creating a new ClusterRole ", clusterRole.Name)
+			err = r.Service.Create(context.TODO(), clusterRole)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+		} else if err != nil {
+			return reconcile.Result{}, err
+		}
 
+		// Define a new ClusterRoleBinding object
+		clusterRoleBinding := newClusterRoleBindingforCR(instance, clusterRole.Name, serviceAccount.Name, serviceAccount.Namespace)
+		// Set OperationRule instance as the owner and controller
+		if err := controllerutil.SetControllerReference(instance, clusterRoleBinding, r.Service.GetScheme()); err != nil {
+			return reconcile.Result{}, err
+		}
+		// Check if this ClusterRoleBinding already exists
+		foundClusterRoleBinding := &rbacv1.ClusterRoleBinding{}
+		err = r.Service.Get(context.TODO(), types.NamespacedName{Name: clusterRoleBinding.Name, Namespace: ""}, foundClusterRoleBinding)
+		if err != nil && errors.IsNotFound(err) {
+			log.Info("Creating a new ClusterRoleBinding ", clusterRoleBinding.Name)
+			err = r.Service.Create(context.TODO(), clusterRoleBinding)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+		} else if err != nil {
+			return reconcile.Result{}, err
+		}
+	} else {
+		// Define a new Role object
+		role := newRoleforCR(instance, resources, apiResources, serviceAccount.Namespace)
+		// Set OperationRule instance as the owner and controller
+		if err := controllerutil.SetControllerReference(instance, role, r.Service.GetScheme()); err != nil {
+			return reconcile.Result{}, err
+		}
+		// Check if this Role already exists
+		foundRole := &rbacv1.Role{}
+		err = r.Service.Get(context.TODO(), types.NamespacedName{Name: role.Name, Namespace: role.Namespace}, foundRole)
+		if err != nil && errors.IsNotFound(err) {
+			log.Info("Creating a new Role in Namespace ", role.Namespace, " Name ", role.Name)
+			err = r.Service.Create(context.TODO(), role)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+		} else if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		// Define a new RoleBinding object
+		roleBinding := newRoleBindingforCR(instance, role.Name, serviceAccount.Name, serviceAccount.Namespace)
+		// Set OperationRule instance as the owner and controller
+		if err := controllerutil.SetControllerReference(instance, roleBinding, r.Service.GetScheme()); err != nil {
+			return reconcile.Result{}, err
+		}
+		// Check if this RoleBinding already exists
+		foundRoleBinding := &rbacv1.RoleBinding{}
+		err = r.Service.Get(context.TODO(), types.NamespacedName{Name: roleBinding.Name, Namespace: roleBinding.Namespace}, foundRoleBinding)
+		if err != nil && errors.IsNotFound(err) {
+			log.Info("Creating a new RoleBinding in Namespace ", roleBinding.Namespace, " Name ", roleBinding.Name)
+			err = r.Service.Create(context.TODO(), roleBinding)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+		} else if err != nil {
+			return reconcile.Result{}, err
+		}
+	}
 	// Define a new Pod object
 	/*
 		pod := newPodForCR(instance, serviceAccount.Name, schemaName, namespace)
@@ -829,7 +868,7 @@ func newRoleforCR(cr *rulev1alpha1.OperationRule, resources []rulev1alpha1.Opera
 	}
 	role := &rbacv1.Role{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      cr.Name,
+			Name:      cr.Name + "-inferator",
 			Namespace: namespace,
 			Labels:    labels,
 		},
@@ -874,7 +913,7 @@ func newRoleBindingforCR(cr *rulev1alpha1.OperationRule, roleName, serviceAccoun
 	}
 	return &rbacv1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      cr.Name,
+			Name:      cr.Name + "-inferator",
 			Namespace: namespace,
 			Labels:    labels,
 		},
@@ -891,6 +930,74 @@ func newRoleBindingforCR(cr *rulev1alpha1.OperationRule, roleName, serviceAccoun
 	}
 }
 
+// newClusterRoleforCR ...
+func newClusterRoleforCR(cr *rulev1alpha1.OperationRule, resources []rulev1alpha1.OperationRuleSpecType, apiResources []metav1.APIResource) *rbacv1.ClusterRole {
+	labels := map[string]string{
+		"app": cr.Name,
+	}
+	clusterRole := &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   cr.Name + "-inferator",
+			Labels: labels,
+		},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{"", "rbac.authorization.k8s.io", v1alpha1.SchemeGroupVersion.Group},
+				Resources: []string{"*"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{""},
+				Resources: []string{"configmaps", "services", "pods", "pods/finalizers"},
+				Verbs: []string{
+					"create",
+					"delete",
+					"deletecollection",
+					"get",
+					"list",
+					"patch",
+					"update",
+					"watch",
+				},
+			},
+		},
+	}
+	for i, apiResource := range apiResources {
+		clusterRole.Rules = append(clusterRole.Rules,
+			rbacv1.PolicyRule{
+				APIGroups: []string{resources[i].GroupVersionKind().Group},
+				Resources: []string{apiResource.Name},
+				Verbs:     apiResource.Verbs,
+			},
+		)
+	}
+	return clusterRole
+}
+
+// newClusterRoleBindingforCR ...
+func newClusterRoleBindingforCR(cr *rulev1alpha1.OperationRule, clusterRoleName, serviceAccount, namespace string) *rbacv1.ClusterRoleBinding {
+	labels := map[string]string{
+		"app": cr.Name,
+	}
+	return &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   cr.Name + "-inferator",
+			Labels: labels,
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      rbacv1.ServiceAccountKind,
+				Name:      serviceAccount,
+				Namespace: namespace,
+			},
+		},
+		RoleRef: rbacv1.RoleRef{
+			Kind: "ClusterRole",
+			Name: clusterRoleName,
+		},
+	}
+}
+
 // newSAforCR ...
 func newSAforCR(cr *rulev1alpha1.OperationRule, namespace string) *corev1.ServiceAccount {
 	labels := map[string]string{
@@ -898,7 +1005,7 @@ func newSAforCR(cr *rulev1alpha1.OperationRule, namespace string) *corev1.Servic
 	}
 	return &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      cr.Name,
+			Name:      cr.Name + "-inferator",
 			Namespace: namespace,
 			Labels:    labels,
 		},

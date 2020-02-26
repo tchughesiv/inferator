@@ -110,6 +110,14 @@ func GetDeployment(operatorName, repository, context, imageName, tag, imagePullP
 										},
 									},
 								},
+								{
+									Name: "OPERATOR_GROUP",
+									ValueFrom: &corev1.EnvVarSource{
+										FieldRef: &corev1.ObjectFieldSelector{
+											FieldPath: "metadata.annotations['olm.operatorGroup']",
+										},
+									},
+								},
 							},
 						},
 					},

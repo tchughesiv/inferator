@@ -3,19 +3,6 @@ kind: OperationRule
 metadata:
   name: example-operationrule
 spec:
-  resources:
-    deployment1:
-      apiVersion: apps/v1
-      kind: Deployment
-      name: testapp1
-    deployment2:
-      apiVersion: apps/v1
-      kind: Deployment
-      name: testapp2
-    deployment3:
-      apiVersion: apps/v1
-      kind: Deployment
-      name: testapp3
   inference:
     inputs:
     - deployment1
@@ -47,3 +34,16 @@ spec:
         value:
           replicas: '0'
   # expose: true
+  resources:
+    deployment1:
+      apiVersion: apps/v1
+      kind: Deployment
+      name: testapp1
+    deployment2:
+      apiVersion: apps/v1
+      kind: Deployment
+      name: testapp2
+    deployment3:
+      apiVersion: apps/v1
+      kind: Deployment
+      name: testapp3
