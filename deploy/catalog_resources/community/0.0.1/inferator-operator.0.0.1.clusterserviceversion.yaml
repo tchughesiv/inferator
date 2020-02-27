@@ -6,7 +6,7 @@ metadata:
     categories: Integration & Delivery
     certified: "false"
     containerImage: quay.io/tchughesiv/inferator:0.0.1
-    createdAt: "2020-01-29 11:14:11"
+    createdAt: "2020-02-26 15:49:51"
     description: Inferator 0.0.1
     repository: https://github.com/tchughesiv/inferator
     support: Red Hat, Inc.
@@ -28,6 +28,12 @@ spec:
         name: ""
         version: rbac.authorization.k8s.io/v1
       - kind: RoleBinding
+        name: ""
+        version: rbac.authorization.k8s.io/v1
+      - kind: ClusterRole
+        name: ""
+        version: rbac.authorization.k8s.io/v1
+      - kind: ClusterRoleBinding
         name: ""
         version: rbac.authorization.k8s.io/v1
       - kind: Secret
@@ -86,6 +92,10 @@ spec:
                   valueFrom:
                     fieldRef:
                       fieldPath: metadata.annotations['olm.targetNamespaces']
+                - name: OPERATOR_GROUP
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.annotations['olm.operatorGroup']
                 image: quay.io/tchughesiv/inferator:0.0.1
                 imagePullPolicy: Always
                 name: inferator
@@ -128,7 +138,7 @@ spec:
     type: SingleNamespace
   - supported: false
     type: MultiNamespace
-  - supported: false
+  - supported: true
     type: AllNamespaces
   keywords:
   - inferator

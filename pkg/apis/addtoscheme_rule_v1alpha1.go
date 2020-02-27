@@ -6,9 +6,11 @@ import (
 	knative "github.com/knative/serving/pkg/apis/serving/v1"
 	oappsv1 "github.com/openshift/api/apps/v1"
 	buildv1 "github.com/openshift/api/build/v1"
+	configv1 "github.com/openshift/api/config/v1"
 	oimagev1 "github.com/openshift/api/image/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	security1 "github.com/openshift/api/security/v1"
+	csvv1alpha1 "github.com/operator-framework/operator-lifecycle-manager/pkg/api/apis/operators/v1alpha1"
 	"github.com/tchughesiv/inferator/pkg/apis/rule/v1alpha1"
 	"github.com/tchughesiv/inferator/pkg/controller/operationrule/constants"
 	appsv1 "k8s.io/api/apps/v1"
@@ -31,6 +33,8 @@ func init() {
 		routev1.AddToScheme,
 		oimagev1.AddToScheme,
 		buildv1.AddToScheme,
+		configv1.AddToScheme,
+		csvv1alpha1.AddToScheme,
 	)
 	if os.Getenv(constants.RuntimeEnv) == "true" {
 		schemeGroupVersion := schema.GroupVersion{Group: os.Getenv("OPRULE_OBJECT_GROUP"), Version: os.Getenv("OPRULE_OBJECT_VERSION")}

@@ -3,19 +3,6 @@ kind: OperationRule
 metadata:
   name: multi-object-type
 spec:
-  resources:
-    deployment1:
-      apiVersion: apps/v1
-      kind: Deployment
-      name: testdep
-    depConfig1:
-      apiVersion: apps.openshift.io/v1
-      kind: DeploymentConfig
-      name: testdc
-    replicaSet1:
-      apiVersion: apps/v1
-      kind: ReplicaSet
-      name: testrs
   inference:
     inputs:
     - replicaSet1
@@ -63,3 +50,16 @@ spec:
         path: spec.template.metadata.labels
         value:
           depName: ''
+  resources:
+    deployment1:
+      apiVersion: apps/v1
+      kind: Deployment
+      name: testdep
+    depConfig1:
+      apiVersion: apps.openshift.io/v1
+      kind: DeploymentConfig
+      name: testdc
+    replicaSet1:
+      apiVersion: apps/v1
+      kind: ReplicaSet
+      name: testrs

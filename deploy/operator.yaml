@@ -33,6 +33,10 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.annotations['olm.targetNamespaces']
+        - name: OPERATOR_GROUP
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.annotations['olm.operatorGroup']
         image: quay.io/tchughesiv/inferator:0.0.1
         imagePullPolicy: Always
         name: inferator

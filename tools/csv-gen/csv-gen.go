@@ -10,7 +10,7 @@ import (
 	"github.com/blang/semver"
 	routev1 "github.com/openshift/api/route/v1"
 	security1 "github.com/openshift/api/security/v1"
-	csvv1 "github.com/operator-framework/operator-lifecycle-manager/pkg/api/apis/operators/v1alpha1"
+	csvv1alpha1 "github.com/operator-framework/operator-lifecycle-manager/pkg/api/apis/operators/v1alpha1"
 	olmversion "github.com/operator-framework/operator-lifecycle-manager/pkg/lib/version"
 	api "github.com/tchughesiv/inferator/pkg/apis/rule/v1alpha1"
 	"github.com/tchughesiv/inferator/pkg/components"
@@ -51,9 +51,9 @@ type packageStruct struct {
 func main() {
 	csv := components.Csv
 	operatorName := csv.Name + "-operator"
-	templateStruct := &csvv1.ClusterServiceVersion{}
-	templateStruct.SetGroupVersionKind(csvv1.SchemeGroupVersion.WithKind("ClusterServiceVersion"))
-	csvStruct := &csvv1.ClusterServiceVersion{}
+	templateStruct := &csvv1alpha1.ClusterServiceVersion{}
+	templateStruct.SetGroupVersionKind(csvv1alpha1.SchemeGroupVersion.WithKind("ClusterServiceVersion"))
+	csvStruct := &csvv1alpha1.ClusterServiceVersion{}
 	strategySpec := &csvStrategySpec{}
 	json.Unmarshal(csvStruct.Spec.InstallStrategy.StrategySpecRaw, strategySpec)
 
@@ -101,34 +101,42 @@ func main() {
 	templateStruct.Spec.Description = descrip
 	templateStruct.Spec.DisplayName = csv.DisplayName
 	templateStruct.Spec.Maturity = maturity
-	templateStruct.Spec.Maintainers = []csvv1.Maintainer{{Name: rh, Email: "tohughes@redhat.com"}}
-	templateStruct.Spec.Provider = csvv1.AppLink{Name: rh}
+	templateStruct.Spec.Maintainers = []csvv1alpha1.Maintainer{{Name: rh, Email: "tohughes@redhat.com"}}
+	templateStruct.Spec.Provider = csvv1alpha1.AppLink{Name: rh}
 	tLabels := map[string]string{
 		"alm-owner-" + csv.Name: operatorName,
 		"operated-by":           csvVersionedName,
 	}
 	templateStruct.Spec.Labels = tLabels
 	templateStruct.Spec.Selector = &metav1.LabelSelector{MatchLabels: tLabels}
-	templateStruct.Spec.InstallModes = []csvv1.InstallMode{
-		{Type: csvv1.InstallModeTypeOwnNamespace, Supported: true},
-		{Type: csvv1.InstallModeTypeSingleNamespace, Supported: true},
-		{Type: csvv1.InstallModeTypeMultiNamespace, Supported: false},
-		{Type: csvv1.InstallModeTypeAllNamespaces, Supported: false},
+	templateStruct.Spec.InstallModes = []csvv1alpha1.InstallMode{
+		{Type: csvv1alpha1.InstallModeTypeOwnNamespace, Supported: true},
+		{Type: csvv1alpha1.InstallModeTypeSingleNamespace, Supported: true},
+		{Type: csvv1alpha1.InstallModeTypeMultiNamespace, Supported: false},
+		{Type: csvv1alpha1.InstallModeTypeAllNamespaces, Supported: true},
 	}
-	templateStruct.Spec.CustomResourceDefinitions.Owned = []csvv1.CRDDescription{
+	templateStruct.Spec.CustomResourceDefinitions.Owned = []csvv1alpha1.CRDDescription{
 		{
 			Version:     api.SchemeGroupVersion.Version,
 			Kind:        "OperationRule",
 			DisplayName: "OperationRule",
 			Description: "A project prescription running an Inferator pod.",
 			Name:        "operationrules." + api.SchemeGroupVersion.Group,
-			Resources: []csvv1.APIResourceReference{
+			Resources: []csvv1alpha1.APIResourceReference{
 				{
 					Kind:    "Role",
 					Version: rbacv1.SchemeGroupVersion.String(),
 				},
 				{
 					Kind:    "RoleBinding",
+					Version: rbacv1.SchemeGroupVersion.String(),
+				},
+				{
+					Kind:    "ClusterRole",
+					Version: rbacv1.SchemeGroupVersion.String(),
+				},
+				{
+					Kind:    "ClusterRoleBinding",
 					Version: rbacv1.SchemeGroupVersion.String(),
 				},
 				{
@@ -168,7 +176,7 @@ func main() {
 	/*
 		copyTemplateStruct := templateStruct.DeepCopy()
 		copyTemplateStruct.Annotations["createdAt"] = ""
-		data := &csvv1.ClusterServiceVersion{}
+		data := &csvv1alpha1.ClusterServiceVersion{}
 		if fileExists(csvFile) {
 			yamlFile, err := ioutil.ReadFile(csvFile)
 			if err != nil {
