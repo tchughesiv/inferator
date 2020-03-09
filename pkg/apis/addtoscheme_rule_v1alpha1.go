@@ -3,6 +3,7 @@ package apis
 import (
 	"os"
 
+	// monv1 "github.com/coreos/prometheus-operator/pkg/apis/monitoring/v1"
 	knative "github.com/knative/serving/pkg/apis/serving/v1"
 	oappsv1 "github.com/openshift/api/apps/v1"
 	buildv1 "github.com/openshift/api/build/v1"

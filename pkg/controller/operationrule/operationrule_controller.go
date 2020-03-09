@@ -15,6 +15,7 @@ import (
 
 	knative "github.com/knative/serving/pkg/apis/serving/v1"
 	routev1 "github.com/openshift/api/route/v1"
+	"github.com/prometheus/alertmanager/template"
 	"github.com/tchughesiv/inferator/pkg/apis/rule/v1alpha1"
 	rulev1alpha1 "github.com/tchughesiv/inferator/pkg/apis/rule/v1alpha1"
 	"github.com/tchughesiv/inferator/pkg/components"
@@ -54,7 +55,12 @@ type KubeObject interface {
 // Add creates a new OperationRule Controller and adds it to the Manager. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
 func Add(mgr manager.Manager, reconciler *Reconciler) error {
-	return add(mgr, reconciler)
+	err := add(mgr, reconciler)
+	if os.Getenv(constants.AlertWebhookEnv) == "true" {
+		// start webhook service
+		reconciler.startWebhook()
+	}
+	return err
 }
 
 // add adds a new Controller to mgr with r as the reconcile.Reconciler
@@ -144,7 +150,7 @@ type Reconciler struct {
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
 func (r *Reconciler) Reconcile(request reconcile.Request) (reconcile.Result, error) {
 	if os.Getenv(constants.RuntimeEnv) == "true" {
-		return r.reconcileInferator(request)
+		return r.reconcileInferator(request, template.Alert{})
 	}
 	return r.reconcileOperator(request)
 }
@@ -166,8 +172,10 @@ func itemExists(slice interface{}, item interface{}) bool {
 }
 
 // reconcileInferator ...
-func (r *Reconciler) reconcileInferator(request reconcile.Request) (reconcile.Result, error) {
+func (r *Reconciler) reconcileInferator(request reconcile.Request, alert template.Alert) (reconcile.Result, error) {
 	log := log.With("Inferator", request.Name, "Namespace", request.Namespace)
+	var post bool
+
 	inputs := []string{}
 	err := json.Unmarshal([]byte(os.Getenv("OPRULE_INPUTS")), &inputs)
 	if err != nil {
@@ -180,6 +188,7 @@ func (r *Reconciler) reconcileInferator(request reconcile.Request) (reconcile.Re
 		log.Error(err)
 		return reconcile.Result{}, err
 	}
+
 	postObject := map[string]runtime.Object{}
 	objInt := admission.NewObjectInterfacesFromScheme(r.Service.GetScheme())
 	creator := objInt.GetObjectCreater()
@@ -201,7 +210,6 @@ func (r *Reconciler) reconcileInferator(request reconcile.Request) (reconcile.Re
 		}
 	}
 
-	var post bool
 	if itemExists(objectNames, request.Name) {
 		// only send 'input' objects to zenithr
 		for name, object := range postObject {
@@ -220,12 +228,28 @@ func (r *Reconciler) reconcileInferator(request reconcile.Request) (reconcile.Re
 		}
 	}
 
+	alertObject := map[string]template.KV{}
+	if alert.Status != "" {
+		post = true
+		alertObject[constants.AlertAlias] = alert.Labels
+		log.Infof("Alert: name=%s, severity=%s, status=%s, Labels=%v, Annotations=%v\n", alert.Labels["alertname"], alert.Labels["severity"], alert.Status, alert.Labels, alert.Annotations)
+	}
+
 	if post {
 		var buf bytes.Buffer
-		err = json.NewEncoder(&buf).Encode(&postObject)
-		if err != nil {
-			log.Error(err)
+		if _, ok := alertObject[constants.AlertAlias]; ok {
+			err = json.NewEncoder(&buf).Encode(&alertObject)
+			if err != nil {
+				log.Error(err)
+			}
+		} else {
+			err = json.NewEncoder(&buf).Encode(&postObject)
+			if err != nil {
+				log.Error(err)
+			}
 		}
+
+		// fmt.Println(buf.String())
 
 		resp, err := http.Post("http://localhost:8080/", "application/json", &buf)
 		if err != nil {
@@ -472,8 +496,11 @@ func (r *Reconciler) reconcileOperator(request reconcile.Request) (reconcile.Res
 		return reconcile.Result{}, err
 	}
 
+	if instance.Spec.AlertWebhook && !itemExists(instance.Spec.Inference.Inputs, constants.AlertAlias) {
+		instance.Spec.Inference.Inputs = append(instance.Spec.Inference.Inputs, constants.AlertAlias)
+	}
 	for _, i := range instance.Spec.Inference.Inputs {
-		if _, ok := instance.Spec.Resources[i]; !ok {
+		if _, ok := instance.Spec.Resources[i]; !ok && i != constants.AlertAlias {
 			log.Error(i + " is not declared as a resource")
 			return reconcile.Result{}, nil
 		}
@@ -713,13 +740,15 @@ func (r *Reconciler) reconcileOperator(request reconcile.Request) (reconcile.Res
 
 	genRoute := newRouteForCR(instance)
 	curRoute := &routev1.Route{}
-	if instance.Spec.Expose {
+	if instance.Spec.Expose || instance.Spec.AlertWebhook {
 		// Create service object based on CR, if does not exist:
 		curService := &corev1.Service{}
 		err = r.loadOrCreate(instance, newServiceForCR(instance), curService)
 		if err != nil {
 			return reconcile.Result{}, err
 		}
+	}
+	if instance.Spec.Expose {
 		// Create route based on CR, if does not exist:
 		err = r.loadOrCreate(instance, genRoute, curRoute)
 		if err != nil {
@@ -817,8 +846,9 @@ func newPodForCR(cr *rulev1alpha1.OperationRule, resources map[string]rulev1alph
 					Command:         []string{"inferator"},
 					Env: []corev1.EnvVar{
 						{Name: constants.RuntimeEnv, Value: "true"},
-						{Name: "OPRULE_OBJECTS", Value: string(objects)},
+						{Name: constants.AlertWebhookEnv, Value: strconv.FormatBool(cr.Spec.AlertWebhook)},
 						{Name: "OPRULE_INPUTS", Value: string(inputs)},
+						{Name: "OPRULE_OBJECTS", Value: string(objects)},
 						{Name: "WATCH_NAMESPACE", Value: namespace},
 						{Name: "POD_NAME", Value: name},
 						{Name: "OPERATOR_NAME", Value: name},
@@ -1028,6 +1058,10 @@ func newServiceForCR(cr *rulev1alpha1.OperationRule) *corev1.Service {
 				{
 					Name: "http",
 					Port: 8080,
+				},
+				{
+					Name: "webhook",
+					Port: 8081,
 				},
 			},
 			Selector: labels,

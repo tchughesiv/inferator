@@ -1,0 +1,159 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: ClusterServiceVersion
+metadata:
+  annotations:
+    capabilities: Basic Install
+    categories: Integration & Delivery
+    certified: "false"
+    containerImage: quay.io/tchughesiv/inferator:0.0.2
+    createdAt: "2020-03-10 07:52:18"
+    description: Inferator 0.0.2
+    repository: https://github.com/tchughesiv/inferator
+    support: Red Hat, Inc.
+    tectonic-visibility: ocs
+  labels:
+    operator-inferator: "true"
+  name: inferator-operator.0.0.2
+  namespace: placeholder
+spec:
+  apiservicedefinitions: {}
+  customresourcedefinitions:
+    owned:
+    - description: A project prescription running an Inferator pod.
+      displayName: OperationRule
+      kind: OperationRule
+      name: operationrules.rule.example.com
+      resources:
+      - kind: Role
+        name: ""
+        version: rbac.authorization.k8s.io/v1
+      - kind: RoleBinding
+        name: ""
+        version: rbac.authorization.k8s.io/v1
+      - kind: ClusterRole
+        name: ""
+        version: rbac.authorization.k8s.io/v1
+      - kind: ClusterRoleBinding
+        name: ""
+        version: rbac.authorization.k8s.io/v1
+      - kind: Secret
+        name: ""
+        version: v1
+      - kind: Pod
+        name: ""
+        version: v1
+      - kind: ServiceAccount
+        name: ""
+        version: v1
+      - kind: Service
+        name: ""
+        version: v1
+      - kind: Route
+        name: ""
+        version: route.openshift.io/v1
+      - kind: SecurityContextConstraint
+        name: ""
+        version: security.openshift.io/v1
+      version: v1alpha1
+  description: Inferator 0.0.2
+  displayName: Inferator
+  install:
+    spec:
+      deployments:
+      - name: inferator
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              name: inferator
+          strategy:
+            rollingUpdate:
+              maxSurge: 1
+              maxUnavailable: 1
+            type: RollingUpdate
+          template:
+            metadata:
+              labels:
+                name: inferator
+            spec:
+              containers:
+              - command:
+                - inferator
+                env:
+                - name: OPERATOR_NAME
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.labels['name']
+                - name: POD_NAME
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.name
+                - name: WATCH_NAMESPACE
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.annotations['olm.targetNamespaces']
+                - name: OPERATOR_GROUP
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.annotations['olm.operatorGroup']
+                image: quay.io/tchughesiv/inferator:0.0.2
+                imagePullPolicy: Always
+                name: inferator
+                resources: {}
+              serviceAccountName: inferator
+      permissions:
+      - rules:
+        - apiGroups:
+          - '*'
+          resources:
+          - '*'
+          verbs:
+          - '*'
+        - apiGroups:
+          - apps
+          resources:
+          - deployments/finalizers
+          verbs:
+          - update
+        - apiGroups:
+          - rule.example.com
+          resources:
+          - operationrules
+          - operationrules/finalizers
+          verbs:
+          - create
+          - delete
+          - deletecollection
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        serviceAccountName: inferator
+    strategy: deployment
+  installModes:
+  - supported: true
+    type: OwnNamespace
+  - supported: true
+    type: SingleNamespace
+  - supported: false
+    type: MultiNamespace
+  - supported: true
+    type: AllNamespaces
+  keywords:
+  - inferator
+  - operator
+  labels:
+    alm-owner-inferator: inferator-operator
+    operated-by: inferator-operator.0.0.2
+  maintainers:
+  - email: tohughes@redhat.com
+    name: Red Hat, Inc.
+  maturity: alpha
+  provider:
+    name: Red Hat, Inc.
+  selector:
+    matchLabels:
+      alm-owner-inferator: inferator-operator
+      operated-by: inferator-operator.0.0.2
+  version: 0.0.2

@@ -3,8 +3,10 @@ package constants
 import corev1 "k8s.io/api/core/v1"
 
 const (
-	RuntimeEnv = "INFERATOR"
-	RulesVar   = "RULES_DEFINITION"
+	RuntimeEnv      = "INFERATOR"
+	AlertWebhookEnv = "ALERT_WEBHOOK"
+	RulesVar        = "RULES_DEFINITION"
+	AlertAlias      = "alertWebhook"
 )
 
 var (
