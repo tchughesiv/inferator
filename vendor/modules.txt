@@ -159,6 +159,10 @@ github.com/openshift/api/image/dockerpre012
 github.com/openshift/api/image/v1
 github.com/openshift/api/route/v1
 github.com/openshift/api/security/v1
+# github.com/openshift/cluster-logging-operator v0.0.0-20200312191914-b26f894f5c9b
+github.com/openshift/cluster-logging-operator/pkg/apis/logging/v1
+# github.com/openshift/elasticsearch-operator v0.0.0-20200311213204-8edc782da06e
+github.com/openshift/elasticsearch-operator/pkg/apis/logging/v1
 # github.com/operator-framework/operator-lifecycle-manager v0.0.0-20190605231540-b8a4faf68e36
 github.com/operator-framework/operator-lifecycle-manager/pkg/api/apis/operators
 github.com/operator-framework/operator-lifecycle-manager/pkg/api/apis/operators/v1alpha1
@@ -687,6 +691,7 @@ sigs.k8s.io/controller-runtime/pkg/reconcile
 sigs.k8s.io/controller-runtime/pkg/recorder
 sigs.k8s.io/controller-runtime/pkg/runtime/inject
 sigs.k8s.io/controller-runtime/pkg/runtime/log
+sigs.k8s.io/controller-runtime/pkg/runtime/scheme
 sigs.k8s.io/controller-runtime/pkg/scheme
 sigs.k8s.io/controller-runtime/pkg/source
 sigs.k8s.io/controller-runtime/pkg/source/internal

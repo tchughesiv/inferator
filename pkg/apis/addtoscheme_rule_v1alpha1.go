@@ -11,10 +11,12 @@ import (
 	oimagev1 "github.com/openshift/api/image/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	security1 "github.com/openshift/api/security/v1"
+	ologgingv1 "github.com/openshift/cluster-logging-operator/pkg/apis/logging/v1"
 	csvv1alpha1 "github.com/operator-framework/operator-lifecycle-manager/pkg/api/apis/operators/v1alpha1"
 	"github.com/tchughesiv/inferator/pkg/apis/rule/v1alpha1"
 	"github.com/tchughesiv/inferator/pkg/controller/operationrule/constants"
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -25,10 +27,12 @@ func init() {
 	// Register the types with the Scheme so the components can map objects to GroupVersionKinds and back
 	AddToSchemes = append(AddToSchemes,
 		v1alpha1.SchemeBuilder.AddToScheme,
-		corev1.SchemeBuilder.AddToScheme,
-		appsv1.SchemeBuilder.AddToScheme,
-		rbacv1.SchemeBuilder.AddToScheme,
-		knative.SchemeBuilder.AddToScheme,
+		ologgingv1.SchemeBuilder.AddToScheme,
+		corev1.AddToScheme,
+		appsv1.AddToScheme,
+		rbacv1.AddToScheme,
+		knative.AddToScheme,
+		batchv1.AddToScheme,
 		oappsv1.AddToScheme,
 		security1.AddToScheme,
 		routev1.AddToScheme,

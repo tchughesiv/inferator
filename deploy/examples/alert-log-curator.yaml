@@ -8,26 +8,25 @@ spec:
   inference:
     rules:
     - when:
-      - $alertWebhook.alertname == "CPUThrottlingHigh"
-      - $alertWebhook.severity == "warning"
+      - $alertWebhook.alertname == "TargetDown"
       then:
-      - name: cron
-        path: spec.jobTemplate.spec.template.spec.containers[0]
-        value:
-          alertname: $alertWebhook.alertname
-          env: 'name: CURATOR_DEFAULT_DAYS, value: 10'
       - name: config
         path: data
         value:
-          config.yaml: '
-    .defaults:\n
-      delete:\n
-        days: 10'
+          'config\\.yaml': '.defaults:\n   delete:\n     days: 10'
+    - when:
+      - $alertWebhook.alertname == "UsingDeprecatedAPIExtensionsV1Beta1"
+      - $alertWebhook.severity == "warning"
+      then:
+      - name: clusterLogging
+        path: spec.curation.curator
+        value:
+          schedule: '*/30 * * * *'
   resources:
-    cron:
-      apiVersion: batch/v1beta1
-      kind: CronJob
-      name: curator
+    clusterLogging:
+      apiVersion: logging.openshift.io/v1
+      kind: ClusterLogging
+      name: instance
     config:
       apiVersion: v1
       kind: ConfigMap

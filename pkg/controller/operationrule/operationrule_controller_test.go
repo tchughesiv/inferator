@@ -36,6 +36,16 @@ func TestFieldConversionsDep(t *testing.T) {
 					RestartPolicy:                 corev1.RestartPolicyAlways,
 					ServiceAccountName:            "testsa",
 					PreemptionPolicy:              &preempt,
+					Containers: []corev1.Container{
+						{
+							Env: []corev1.EnvVar{
+								{
+									Name:  "test",
+									Value: "old",
+								},
+							},
+						},
+					},
 				},
 			},
 		},
@@ -66,7 +76,7 @@ func TestFieldConversionsDep(t *testing.T) {
 	err := json.Unmarshal(newJSON, &newDep)
 	assert.Nil(t, err)
 
-	assert.NotEqual(t, dep, newDep)
+	assert.NotEqual(t, dep.Spec.Template.Spec, newDep.Spec.Template.Spec)
 	assert.Equal(t, &newPriority, newDep.Spec.Template.Spec.Priority)
 	assert.Equal(t, &newTermSec, newDep.Spec.Template.Spec.TerminationGracePeriodSeconds)
 	assert.Equal(t, &newActiveSec, newDep.Spec.Template.Spec.ActiveDeadlineSeconds)
@@ -86,9 +96,22 @@ func TestFieldConversionsDep(t *testing.T) {
 	newDep = &appv1.Deployment{}
 	err = json.Unmarshal(newJSON, &newDep)
 	assert.Nil(t, err)
-
-	assert.NotEqual(t, dep, newDep)
+	assert.NotEqual(t, dep.ObjectMeta.Labels, newDep.ObjectMeta.Labels)
 	assert.Equal(t, map[string]string{"test": "new", "ha": "ha"}, newDep.ObjectMeta.Labels)
+
+	v = rulev1alpha1.Variable{
+		Name:  dep.Name,
+		Path:  "spec.template.spec.containers[0].env",
+		Value: map[string]string{"testnew": "old", "test": "new"},
+	}
+
+	newJSON = fieldTypeConversion(v, dep.DeepCopyObject())
+
+	newDep = &appv1.Deployment{}
+	err = json.Unmarshal(newJSON, &newDep)
+	assert.Nil(t, err)
+	//assert.NotEqual(t, dep.Spec.Template.Spec.Containers[0].Env, newDep.Spec.Template.Spec.Containers[0].Env)
+	//assert.Equal(t, []corev1.EnvVar{{Name: "testnew", Value: "old"}, {Name: "test", Value: "new"}}, newDep.Spec.Template.Spec.Containers[0].Env)
 }
 
 func TestFieldConversionsDC(t *testing.T) {
@@ -135,6 +158,7 @@ func TestFieldConversionsDC(t *testing.T) {
 			"restartPolicy":                 "OnFailure",
 			"serviceAccountName":            newSA,
 			"preemptionPolicy":              "Never",
+			"config.yaml":                   "|\n    .defaults:\n      delete:\n        days: 10",
 		},
 	}
 	newJSON := fieldTypeConversion(v, dc.DeepCopyObject())
@@ -166,4 +190,31 @@ func TestFieldConversionsDC(t *testing.T) {
 
 	assert.NotEqual(t, dc, newDC)
 	assert.Equal(t, map[string]string{"test": "new", "ha": "ha"}, newDC.ObjectMeta.Labels)
+}
+
+func TestFieldConversionsCM(t *testing.T) {
+	cm := corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "configMap",
+		},
+		Data: map[string]string{
+			"config.yaml": "empty",
+		},
+	}
+	cm.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("ConfigMap"))
+	config := "|\n    .defaults:\n      delete:\n        days: 10"
+	v := rulev1alpha1.Variable{
+		Name:  cm.Name,
+		Path:  "data",
+		Value: map[string]string{`config\.yaml`: config},
+	}
+	newJSON := fieldTypeConversion(v, cm.DeepCopyObject())
+
+	newCM := &corev1.ConfigMap{}
+	err := json.Unmarshal(newJSON, &newCM)
+	assert.Nil(t, err)
+
+	convCMvalue := map[string]string{"config.yaml": config}
+	assert.NotEqual(t, cm.Data, newCM.Data)
+	assert.Equal(t, convCMvalue, newCM.Data)
 }

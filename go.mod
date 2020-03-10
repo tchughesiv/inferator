@@ -12,6 +12,8 @@ require (
 	github.com/google/go-containerregistry v0.0.0-20191202175804-2ce3ea99b462 // indirect
 	github.com/knative/serving v0.10.0
 	github.com/openshift/api v3.9.1-0.20190716152234-9ea19f9dd578+incompatible
+	github.com/openshift/cluster-logging-operator v0.0.0-20200312191914-b26f894f5c9b
+	github.com/openshift/elasticsearch-operator v0.0.0-20200311213204-8edc782da06e // indirect
 	github.com/operator-framework/operator-lifecycle-manager v0.0.0-20190605231540-b8a4faf68e36
 	github.com/operator-framework/operator-sdk v0.12.0
 	github.com/prometheus/alertmanager v0.20.0
