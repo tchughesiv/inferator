@@ -1,0 +1,33 @@
+apiVersion: rule.example.com/v1alpha1
+kind: OperationRule
+metadata:
+  name: alert-log-curator
+  namespace: openshift-logging
+spec:
+  alertWebhook: true
+  inference:
+    rules:
+    - when:
+      - $alertWebhook.alertname == "TargetDown"
+      then:
+      - name: config
+        path: data
+        value:
+          'config\\.yaml': '.defaults:\n   delete:\n     days: 10'
+    - when:
+      - $alertWebhook.alertname == "UsingDeprecatedAPIExtensionsV1Beta1"
+      - $alertWebhook.severity == "warning"
+      then:
+      - name: clusterLogging
+        path: spec.curation.curator
+        value:
+          schedule: '*/30 * * * *'
+  resources:
+    clusterLogging:
+      apiVersion: logging.openshift.io/v1
+      kind: ClusterLogging
+      name: instance
+    config:
+      apiVersion: v1
+      kind: ConfigMap
+      name: curator

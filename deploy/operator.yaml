@@ -37,7 +37,7 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.annotations['olm.operatorGroup']
-        image: quay.io/tchughesiv/inferator:0.0.1
+        image: quay.io/tchughesiv/inferator:0.0.2
         imagePullPolicy: Always
         name: inferator
         resources: {}

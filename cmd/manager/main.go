@@ -144,6 +144,25 @@ func main() {
 		log.Error(err, "Manager exited non-zero")
 		os.Exit(1)
 	}
+
+	// admission webhook example
+	/*
+		mutatingHook := &webhook.Admission{
+			Handler: admission.HandlerFunc(func(ctx context.Context, req webhook.AdmissionRequest) webhook.AdmissionResponse {
+				return webhook.Patched("some changes",
+					webhook.JSONPatchOp{Operation: "add", Path: "/metadata/annotations/access", Value: "granted"},
+					webhook.JSONPatchOp{Operation: "add", Path: "/metadata/annotations/reason", Value: "not so secret"},
+				)
+			}),
+		}
+
+		webhookServer := mgr.GetWebhookServer()
+		webhookServer.Register("/test", mutatingHook)
+		if err := webhookServer.Start(signals.SetupSignalHandler()); err != nil {
+			log.Error(err, "Manager exited non-zero")
+			os.Exit(1)
+		}
+	*/
 }
 
 // serveCRMetrics gets the Operator/CustomResource GVKs and generates metrics based on those types.

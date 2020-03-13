@@ -17,17 +17,18 @@ import (
 type OperationRuleSpec struct {
 	// Important: Run "operator-sdk generate k8s" to regenerate code after modifying this file
 	// Add custom validation using kubebuilder tags: https://book-v1.book.kubebuilder.io/beyond_basics/generating_crd.html
-	Resources map[string]OperationRuleSpecType `json:"resources"`
-	Inference OperationRuleSpecInference       `json:"inference"`
-	Expose    bool                             `json:"expose,omitempty"`
-	HostName  string                           `json:"hostname,omitempty"`
-	KNative   bool                             `json:"knative,omitempty"`
+	Resources    map[string]OperationRuleSpecType `json:"resources"`
+	Inference    OperationRuleSpecInference       `json:"inference"`
+	Expose       bool                             `json:"expose,omitempty"`
+	AlertWebhook bool                             `json:"alertWebhook,omitempty"`
+	HostName     string                           `json:"hostname,omitempty"`
+	KNative      bool                             `json:"knative,omitempty"`
 }
 
 // OperationRuleSpecInference defines the desired state of OperationRule
 // +k8s:openapi-gen=true
 type OperationRuleSpecInference struct {
-	Inputs []string `json:"inputs"`
+	Inputs []string `json:"inputs,omitempty"`
 	Rules  []Rules  `json:"rules"`
 }
 

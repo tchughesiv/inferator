@@ -8,13 +8,15 @@ require (
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/ghodss/yaml v1.0.1-0.20180820084758-c7ce16629ff4
 	github.com/go-logr/logr v0.1.0
-	github.com/go-openapi/spec v0.19.0
+	github.com/go-openapi/spec v0.19.2
 	github.com/google/go-containerregistry v0.0.0-20191202175804-2ce3ea99b462 // indirect
 	github.com/knative/serving v0.10.0
 	github.com/openshift/api v3.9.1-0.20190716152234-9ea19f9dd578+incompatible
+	github.com/openshift/cluster-logging-operator v0.0.0-20200312191914-b26f894f5c9b
+	github.com/openshift/elasticsearch-operator v0.0.0-20200311213204-8edc782da06e // indirect
 	github.com/operator-framework/operator-lifecycle-manager v0.0.0-20190605231540-b8a4faf68e36
 	github.com/operator-framework/operator-sdk v0.12.0
-	github.com/prometheus/procfs v0.0.5 // indirect
+	github.com/prometheus/alertmanager v0.20.0
 	github.com/spf13/pflag v1.0.3
 	github.com/stretchr/testify v1.4.0
 	github.com/tidwall/gjson v1.3.5

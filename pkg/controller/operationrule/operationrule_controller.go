@@ -15,6 +15,7 @@ import (
 
 	knative "github.com/knative/serving/pkg/apis/serving/v1"
 	routev1 "github.com/openshift/api/route/v1"
+	"github.com/prometheus/alertmanager/template"
 	"github.com/tchughesiv/inferator/pkg/apis/rule/v1alpha1"
 	rulev1alpha1 "github.com/tchughesiv/inferator/pkg/apis/rule/v1alpha1"
 	"github.com/tchughesiv/inferator/pkg/components"
@@ -46,6 +47,23 @@ type KubeObject interface {
 	metav1.Object
 }
 
+type responseJSON struct {
+	Status  int
+	Message string
+}
+
+func asJSON(w http.ResponseWriter, status int, message string) {
+	data := responseJSON{
+		Status:  status,
+		Message: message,
+	}
+	bytes, _ := json.Marshal(data)
+	json := string(bytes[:])
+
+	w.WriteHeader(status)
+	fmt.Fprint(w, json)
+}
+
 /**
 * USER ACTION REQUIRED: This is a scaffold file intended for the user to modify with their own Controller
 * business logic.  Delete these comments after modifying this file.*
@@ -54,42 +72,45 @@ type KubeObject interface {
 // Add creates a new OperationRule Controller and adds it to the Manager. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
 func Add(mgr manager.Manager, reconciler *Reconciler) error {
-	return add(mgr, reconciler)
+	c, addErr := add(mgr, reconciler)
+	reconciler.Controller = c
+	return addErr
 }
 
 // add adds a new Controller to mgr with r as the reconcile.Reconciler
-func add(mgr manager.Manager, r reconcile.Reconciler) error {
+func add(mgr manager.Manager, r reconcile.Reconciler) (controller.Controller, error) {
 	// Create a new controller
 	c, err := controller.New("operationrule-controller", mgr, controller.Options{Reconciler: r})
 	if err != nil {
-		return err
+		return c, err
 	}
 	if os.Getenv(constants.RuntimeEnv) == "true" {
 		objects := map[string]rulev1alpha1.OperationRuleSpecType{}
-		watchObjects := []runtime.Object{}
+		watchObjects := []runtime.Object{
+			&corev1.Event{},
+		}
 		err = json.Unmarshal([]byte(os.Getenv("OPRULE_OBJECTS")), &objects)
 		if err != nil {
-			return err
+			return c, err
 		}
 		for _, s := range objects {
 			objInt := admission.NewObjectInterfacesFromScheme(mgr.GetScheme())
 			creator := objInt.GetObjectCreater()
 			newObject, err := creator.New(s.GroupVersionKind())
 			if err != nil {
-				return err
+				return c, err
 			}
 			log.Info(newObject.GetObjectKind().GroupVersionKind().String())
 			if err != nil {
-				return err
+				return c, err
 			}
 			watchObjects = append(watchObjects, newObject)
 		}
-
 		objectHandler := &handler.EnqueueRequestForObject{}
 		for _, watchObject := range watchObjects {
 			err = c.Watch(&source.Kind{Type: watchObject}, objectHandler)
 			if err != nil {
-				return err
+				return c, err
 			}
 		}
 	} else {
@@ -100,7 +121,7 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		for _, watchObject := range watchObjects {
 			err = c.Watch(&source.Kind{Type: watchObject}, objectHandler)
 			if err != nil {
-				return err
+				return c, err
 			}
 		}
 		watchOwnedObjects := []runtime.Object{
@@ -119,12 +140,11 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		for _, watchObject := range watchOwnedObjects {
 			err = c.Watch(&source.Kind{Type: watchObject}, ownerHandler)
 			if err != nil {
-				return err
+				return c, err
 			}
 		}
 	}
-
-	return nil
+	return c, nil
 }
 
 // blank assignment to verify that ReconcileOperationRule implements reconcile.Reconciler
@@ -132,7 +152,9 @@ var _ reconcile.Reconciler = &Reconciler{}
 
 // Reconciler reconciles a OperationRule object
 type Reconciler struct {
-	Service rulev1alpha1.PlatformService
+	Service    rulev1alpha1.PlatformService
+	Alert      template.Alert
+	Controller controller.Controller
 }
 
 // Reconcile reads that state of the cluster for a OperationRule object and makes changes based on the state read
@@ -144,6 +166,18 @@ type Reconciler struct {
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
 func (r *Reconciler) Reconcile(request reconcile.Request) (reconcile.Result, error) {
 	if os.Getenv(constants.RuntimeEnv) == "true" {
+		if os.Getenv(constants.AlertWebhookEnv) == "true" {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/healthz", func(w http.ResponseWriter, req *http.Request) {
+				defer req.Body.Close()
+				fmt.Fprint(w, "Ok!")
+			})
+			mux.HandleFunc("/alertwebhook", r.alertWebhook)
+			listenAddress := ":8081"
+			if err := http.ListenAndServe(listenAddress, mux); err == nil {
+				fmt.Printf("webhook listening, addr: %s", listenAddress)
+			}
+		}
 		return r.reconcileInferator(request)
 	}
 	return r.reconcileOperator(request)
@@ -165,9 +199,26 @@ func itemExists(slice interface{}, item interface{}) bool {
 	return false
 }
 
+func (r *Reconciler) alertWebhook(w http.ResponseWriter, req *http.Request) {
+	defer req.Body.Close()
+	data := template.Data{}
+	if err := json.NewDecoder(req.Body).Decode(&data); err != nil {
+		asJSON(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	for _, alert := range data.Alerts {
+		r.Alert = alert
+		log.Infof("Alert: name=%s, severity=%s, status=%s, Labels=%v, Annotations=%v\n", r.Alert.Labels["alertname"], r.Alert.Labels["severity"], r.Alert.Status, r.Alert.Labels, r.Alert.Annotations)
+		r.Controller.Reconcile(reconcile.Request{NamespacedName: types.NamespacedName{Name: constants.AlertAlias, Namespace: os.Getenv("WATCH_NAMESPACE")}})
+	}
+	asJSON(w, http.StatusOK, "success")
+}
+
 // reconcileInferator ...
 func (r *Reconciler) reconcileInferator(request reconcile.Request) (reconcile.Result, error) {
 	log := log.With("Inferator", request.Name, "Namespace", request.Namespace)
+	var post bool
+
 	inputs := []string{}
 	err := json.Unmarshal([]byte(os.Getenv("OPRULE_INPUTS")), &inputs)
 	if err != nil {
@@ -180,6 +231,7 @@ func (r *Reconciler) reconcileInferator(request reconcile.Request) (reconcile.Re
 		log.Error(err)
 		return reconcile.Result{}, err
 	}
+
 	postObject := map[string]runtime.Object{}
 	objInt := admission.NewObjectInterfacesFromScheme(r.Service.GetScheme())
 	creator := objInt.GetObjectCreater()
@@ -201,7 +253,6 @@ func (r *Reconciler) reconcileInferator(request reconcile.Request) (reconcile.Re
 		}
 	}
 
-	var post bool
 	if itemExists(objectNames, request.Name) {
 		// only send 'input' objects to zenithr
 		for name, object := range postObject {
@@ -219,13 +270,26 @@ func (r *Reconciler) reconcileInferator(request reconcile.Request) (reconcile.Re
 			}
 		}
 	}
+	alertObject := map[string]template.KV{}
+	if request.Name == constants.AlertAlias && r.Alert.Status != "" {
+		post = true
+		alertObject[constants.AlertAlias] = r.Alert.Labels
+	}
 
 	if post {
 		var buf bytes.Buffer
-		err = json.NewEncoder(&buf).Encode(&postObject)
-		if err != nil {
-			log.Error(err)
+		if len(alertObject) > 0 {
+			err = json.NewEncoder(&buf).Encode(&alertObject)
+			if err != nil {
+				log.Error(err)
+			}
+		} else {
+			err = json.NewEncoder(&buf).Encode(&postObject)
+			if err != nil {
+				log.Error(err)
+			}
 		}
+		//fmt.Println(buf.String())
 
 		resp, err := http.Post("http://localhost:8080/", "application/json", &buf)
 		if err != nil {
@@ -244,60 +308,63 @@ func (r *Reconciler) reconcileInferator(request reconcile.Request) (reconcile.Re
 			log.Error(err)
 		}
 
-		prettyJSONresp, err := json.MarshalIndent(variables, "", "    ")
-		if err != nil {
-			log.Error(err)
-		}
-		fmt.Printf("%s\n", string(prettyJSONresp))
-
-		for _, v := range variables {
-			var update bool
-			obj := objects[v.Name]
-			//	if objInt.GetObjectTyper().Recognizes(obj.GetObjectKind().GroupVersionKind()) {
-			object, err := creator.New(obj.GroupVersionKind())
+		if len(variables) > 0 {
+			prettyJSONresp, err := json.MarshalIndent(variables, "", "    ")
 			if err != nil {
 				log.Error(err)
 			}
-			err = r.Service.Get(context.TODO(), types.NamespacedName{Name: obj.Name, Namespace: obj.Namespace}, object)
-			if err != nil {
-				if errors.IsNotFound(err) {
-					log.Warn(obj.Kind + " " + obj.Name + " for " + v.Name + " was not found")
-				} else {
+			fmt.Printf("%s\n", string(prettyJSONresp))
+			for _, v := range variables {
+				var update bool
+				obj := objects[v.Name]
+				//	if objInt.GetObjectTyper().Recognizes(obj.GetObjectKind().GroupVersionKind()) {
+				object, err := creator.New(obj.GroupVersionKind())
+				if err != nil {
 					log.Error(err)
 				}
-			} else {
-				update = true
-			}
-
-			if update {
-				existingJSON, err := json.Marshal(&object)
+				err = r.Service.Get(context.TODO(), types.NamespacedName{Name: obj.Name, Namespace: obj.Namespace}, object)
 				if err != nil {
-					log.Error("Unmarshal " + v.Name)
-				}
-				newJSON := fieldTypeConversion(v, object)
-				if !reflect.DeepEqual(existingJSON, newJSON) {
-					objectOut, err := creator.New(obj.GroupVersionKind())
-					if err != nil {
+					if errors.IsNotFound(err) {
+						log.Warn(obj.Kind + " " + obj.Name + " for " + v.Name + " was not found")
+					} else {
 						log.Error(err)
 					}
-					if err = json.Unmarshal(newJSON, &objectOut); err != nil {
-						if ute, ok := err.(*json.UnmarshalTypeError); ok {
-							rval := reflect.Zero(ute.Type)
-							fmt.Println("Unmarshal error - should be type '" + rval.Kind().String() + "'")
-						} else {
+				} else {
+					update = true
+				}
+
+				if update {
+					existingJSON, err := json.Marshal(&object)
+					if err != nil {
+						log.Error("Unmarshal " + v.Name)
+					}
+					newJSON := fieldTypeConversion(v, object)
+					if !reflect.DeepEqual(existingJSON, newJSON) {
+						objectOut, err := creator.New(obj.GroupVersionKind())
+						if err != nil {
 							log.Error(err)
 						}
-					}
-					log.Infof("Updating %s %s", objectOut.GetObjectKind().GroupVersionKind().Kind, objects[v.Name].Name)
-					err = r.Service.Update(context.TODO(), objectOut)
-					if err != nil {
-						log.Error(err)
+						if err = json.Unmarshal(newJSON, &objectOut); err != nil {
+							if ute, ok := err.(*json.UnmarshalTypeError); ok {
+								rval := reflect.Zero(ute.Type)
+								fmt.Println(v)
+								fmt.Println("Unmarshal error - should be type '" + rval.Kind().String() + "'")
+							} else {
+								log.Error(err)
+							}
+						}
+						log.Infof("Updating %s %s", objectOut.GetObjectKind().GroupVersionKind().Kind, objects[v.Name].Name)
+						err = r.Service.Update(context.TODO(), objectOut)
+						if err != nil {
+							log.Error(err)
+						}
 					}
 				}
 			}
 		}
 	}
 
+	r.Alert = template.Alert{}
 	return reconcile.Result{}, nil
 }
 
@@ -317,7 +384,7 @@ func fieldTypeConversion(v rulev1alpha1.Variable, object runtime.Object) []byte 
 			switch rval.Kind() {
 			default:
 				new := val
-				if gNested.Value() != val {
+				if gNested.Value() != new {
 					newJSON, err = sjson.SetBytes(newJSON, v.Path+"."+s, new)
 					if err = json.Unmarshal(newJSON, &object); err != nil {
 						if ute, ok := err.(*json.UnmarshalTypeError); ok {
@@ -384,7 +451,6 @@ func fieldTypeConversion(v rulev1alpha1.Variable, object runtime.Object) []byte 
 					}
 				}
 			case reflect.Uint, reflect.Uint8, reflect.Uint32, reflect.Uint64:
-				fmt.Printf("int: %v\n", rval.Uint())
 				new, err := strconv.ParseUint(val, 10, 64)
 				if err != nil {
 					log.Error(rval.Kind().String() + " conversion failed")
@@ -417,14 +483,6 @@ func fieldTypeConversion(v rulev1alpha1.Variable, object runtime.Object) []byte 
 						log.Error(err)
 					}
 				}
-			case reflect.String:
-				new := val
-				if gNested.Value() != val {
-					newJSON, err = sjson.SetBytes(newJSON, v.Path+"."+s, new)
-					if err != nil {
-						log.Error(err)
-					}
-				}
 			case reflect.Map:
 				new := map[string]string{}
 				tmpJSON, err := json.Marshal(gval.Interface())
@@ -446,8 +504,39 @@ func fieldTypeConversion(v rulev1alpha1.Variable, object runtime.Object) []byte 
 				}
 			case reflect.Slice:
 				fmt.Printf("slice: len=%d, %v\n", rval.Len(), rval.Interface())
+			case reflect.Array:
+				fmt.Printf("slice: len=%d\n", rval.Len())
+				new := []corev1.EnvVar{}
+				tmpJSON, err := json.Marshal(gval.Interface())
+				if err != nil {
+					log.Error(err)
+				}
+				err = json.Unmarshal(tmpJSON, &new)
+				if err != nil {
+					log.Error(err)
+				}
+				for key, value := range v.Value {
+					newEnv := corev1.EnvVar{Name: key, Value: value}
+					if !itemExists(new, newEnv) {
+						new = append(new, newEnv)
+					}
+				}
+				if gNested.Value() != gval.Interface() {
+					newJSON, err = sjson.SetBytes(newJSON, v.Path, new)
+					if err != nil {
+						log.Error(err)
+					}
+				}
 			case reflect.Chan:
 				fmt.Printf("chan %v\n", rval.Interface())
+			case reflect.String:
+				new := val
+				if gNested.Value() != val {
+					newJSON, err = sjson.SetBytes(newJSON, v.Path+"."+s, new)
+					if err != nil {
+						log.Error(err)
+					}
+				}
 			}
 		}
 	}
@@ -472,8 +561,11 @@ func (r *Reconciler) reconcileOperator(request reconcile.Request) (reconcile.Res
 		return reconcile.Result{}, err
 	}
 
+	if instance.Spec.AlertWebhook && !itemExists(instance.Spec.Inference.Inputs, constants.AlertAlias) {
+		instance.Spec.Inference.Inputs = append(instance.Spec.Inference.Inputs, constants.AlertAlias)
+	}
 	for _, i := range instance.Spec.Inference.Inputs {
-		if _, ok := instance.Spec.Resources[i]; !ok {
+		if _, ok := instance.Spec.Resources[i]; !ok && i != constants.AlertAlias {
 			log.Error(i + " is not declared as a resource")
 			return reconcile.Result{}, nil
 		}
@@ -713,13 +805,15 @@ func (r *Reconciler) reconcileOperator(request reconcile.Request) (reconcile.Res
 
 	genRoute := newRouteForCR(instance)
 	curRoute := &routev1.Route{}
-	if instance.Spec.Expose {
+	if instance.Spec.Expose || instance.Spec.AlertWebhook {
 		// Create service object based on CR, if does not exist:
 		curService := &corev1.Service{}
 		err = r.loadOrCreate(instance, newServiceForCR(instance), curService)
 		if err != nil {
 			return reconcile.Result{}, err
 		}
+	}
+	if instance.Spec.Expose {
 		// Create route based on CR, if does not exist:
 		err = r.loadOrCreate(instance, genRoute, curRoute)
 		if err != nil {
@@ -817,8 +911,9 @@ func newPodForCR(cr *rulev1alpha1.OperationRule, resources map[string]rulev1alph
 					Command:         []string{"inferator"},
 					Env: []corev1.EnvVar{
 						{Name: constants.RuntimeEnv, Value: "true"},
-						{Name: "OPRULE_OBJECTS", Value: string(objects)},
+						{Name: constants.AlertWebhookEnv, Value: strconv.FormatBool(cr.Spec.AlertWebhook)},
 						{Name: "OPRULE_INPUTS", Value: string(inputs)},
+						{Name: "OPRULE_OBJECTS", Value: string(objects)},
 						{Name: "WATCH_NAMESPACE", Value: namespace},
 						{Name: "POD_NAME", Value: name},
 						{Name: "OPERATOR_NAME", Value: name},
@@ -880,7 +975,7 @@ func newRoleforCR(cr *rulev1alpha1.OperationRule, resources []rulev1alpha1.Opera
 			},
 			{
 				APIGroups: []string{""},
-				Resources: []string{"configmaps", "services", "pods", "pods/finalizers"},
+				Resources: []string{"configmaps", "services", "events", "pods", "pods/finalizers"},
 				Verbs: []string{
 					"create",
 					"delete",
@@ -948,7 +1043,7 @@ func newClusterRoleforCR(cr *rulev1alpha1.OperationRule, resources []rulev1alpha
 			},
 			{
 				APIGroups: []string{""},
-				Resources: []string{"configmaps", "services", "pods", "pods/finalizers"},
+				Resources: []string{"configmaps", "services", "events", "pods", "pods/finalizers"},
 				Verbs: []string{
 					"create",
 					"delete",
@@ -1028,6 +1123,10 @@ func newServiceForCR(cr *rulev1alpha1.OperationRule) *corev1.Service {
 				{
 					Name: "http",
 					Port: 8080,
+				},
+				{
+					Name: "webhook",
+					Port: 8081,
 				},
 			},
 			Selector: labels,
