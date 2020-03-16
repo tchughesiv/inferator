@@ -1,0 +1,52 @@
+apiVersion: rule.example.com/v1alpha1
+kind: OperationRule
+metadata:
+  name: logging-channel-upgrade
+spec:
+  inference:
+    inputs:
+    - version
+    rules:
+    - when:
+      - $version.status.desired.version >= 4.3
+      - $version.status.desired.version < 4.4
+      - $version.status.history[0].version >= 4.3
+      - $version.status.history[0].version < 4.4
+      - $version.status.history[0].state == "Completed"
+      then:
+      - name: loggingSub
+        path: spec
+        value:
+          channel: '4.3'
+    - when:
+      - $version.status.desired.version >= 4.4
+      - $version.status.desired.version < 4.5
+      - $version.status.history[0].version >= 4.4
+      - $version.status.history[0].version < 4.5
+      - $version.status.history[0].state == "Completed"
+      then:
+      - name: loggingSub
+        path: spec
+        value:
+          channel: '4.4'
+    - when:
+      - $version.status.desired.version >= 4.5
+      - $version.status.desired.version < 4.6
+      - $version.status.history[0].version >= 4.5
+      - $version.status.history[0].version < 4.6
+      - $version.status.history[0].state == "Completed"
+      then:
+      - name: loggingSub
+        path: spec
+        value:
+          channel: '4.5'
+  resources:
+    loggingSub:
+      apiVersion: operators.coreos.com/v1alpha1
+      kind: Subscription
+      name: cluster-logging
+      namespace: openshift-logging
+    version:
+      apiVersion: config.openshift.io/v1
+      kind: ClusterVersion
+      name: version
