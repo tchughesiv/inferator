@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	oappsv1 "github.com/openshift/api/apps/v1"
+	configv1 "github.com/openshift/api/config/v1"
 	"github.com/stretchr/testify/assert"
 	rulev1alpha1 "github.com/tchughesiv/inferator/pkg/apis/rule/v1alpha1"
 	appv1 "k8s.io/api/apps/v1"
@@ -216,5 +217,42 @@ func TestFieldConversionsCM(t *testing.T) {
 
 	convCMvalue := map[string]string{"config.yaml": config}
 	assert.NotEqual(t, cm.Data, newCM.Data)
+	assert.Equal(t, convCMvalue, newCM.Data)
+}
+
+func TestFieldConversionsVersion(t *testing.T) {
+	cv := configv1.ClusterVersion{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "version",
+		},
+		Status: configv1.ClusterVersionStatus{
+			History: []configv1.UpdateHistory{
+				{
+					State:   "Completed",
+					Version: "4.3.1",
+				},
+				{
+					Image:   "quay.io/openshift-release-dev/ocp-release@sha256:ea7ac3ad42169b39fce07e5e53403a028644810bee9a212e7456074894df40xx",
+					State:   "Completed",
+					Version: "4.3.0",
+				},
+			},
+		},
+	}
+	cv.SetGroupVersionKind(configv1.SchemeGroupVersion.WithKind("ClusterVersion"))
+	config := "|\n    .defaults:\n      delete:\n        days: 10"
+	v := rulev1alpha1.Variable{
+		Name:  cm.Name,
+		Path:  "data",
+		Value: map[string]string{`config\.yaml`: config},
+	}
+	newJSON := fieldTypeConversion(v, cv.DeepCopyObject())
+
+	newCM := &corev1.ConfigMap{}
+	err := json.Unmarshal(newJSON, &newCM)
+	assert.Nil(t, err)
+
+	convCMvalue := map[string]string{"config.yaml": config}
+	assert.NotEqual(t, cv.Data, newCM.Data)
 	assert.Equal(t, convCMvalue, newCM.Data)
 }
